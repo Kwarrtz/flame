@@ -1,0 +1,9 @@
+[package]
+name = "flame"
+version = "0.1.0"
+authors = ["Dathan Ault-McCoy"]
+
+[dependencies]
+image = "*"
+rand = "*"
+nalgebra = "*"
