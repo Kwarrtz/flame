@@ -3,22 +3,24 @@ use rand::thread_rng;
 use rand::distributions::{Range, IndependentSample};
 use nalgebra::{Affine2, Point2};
 
+pub mod cli;
+
 #[cfg(test)]
 mod test;
 
 #[derive(Clone)]
 pub struct Flame {
     pub transformations: Vec<(f32,Affine2<f32>)>,
+    pub x_min: f32,
+    pub x_max: f32,
+    pub y_min: f32,
+    pub y_max: f32,
 }
 
 #[derive(Clone,Copy)]
 pub struct Config {
     pub width: usize,
     pub height: usize,
-    pub x_min: f32,
-    pub x_max: f32,
-    pub y_min: f32,
-    pub y_max: f32,
     pub iterations: usize,
     pub workers: usize,
 }
@@ -38,7 +40,7 @@ fn choose_trans(trans: &Vec<(f32,Affine2<f32>)>) -> Affine2<f32> {
     trans.iter().last().unwrap().1
 }
 
-pub fn run_single(flame: Flame, c: Config) -> Counter {
+pub fn run_single(f: Flame, c: Config) -> Counter {
     let mut counter = vec![vec![0;c.width];c.height];
 
     let range = Range::new(0.0,1.0);
@@ -48,12 +50,12 @@ pub fn run_single(flame: Flame, c: Config) -> Counter {
                                , range.ind_sample(&mut rng));
 
     for _ in 0..(c.iterations / c.workers) {
-        point = choose_trans(&flame.transformations) * point;
+        point = choose_trans(&f.transformations) * point;
         let mut x = point[0];
         let mut y = point[1];
-        if x > c.x_min && x < c.x_max && y > c.y_min && y < c.y_max {
-            x = (x - c.x_min) * (c.width - 1) as f32 / (c.x_max - c.x_min);
-            y = (y - c.y_min) * (c.height - 1) as f32 / (c.y_max - c.y_min);
+        if x > f.x_min && x < f.x_max && y > f.y_min && y < f.y_max {
+            x = (x - f.x_min) * (c.width - 1) as f32 / (f.x_max - f.x_min);
+            y = (y - f.y_min) * (c.height - 1) as f32 / (f.y_max - f.y_min);
             counter[y as usize][x as usize] += 1;
         }
     }

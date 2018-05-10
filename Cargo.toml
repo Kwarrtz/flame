@@ -1,11 +1,10 @@
 [package]
 name = "flame"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Dathan Ault-McCoy"]
 
 [dependencies]
 image = "*"
 rand = "*"
-
-[dependencies.nalgebra]
-version = "0.13"
+nalgebra = "~0.13"
+clap = "^2.31"

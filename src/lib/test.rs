@@ -28,13 +28,15 @@ fn fern(bench: &mut Bencher) {
 
         let conf = Config {
             width: 250, height: 350,
-            x_min: -2.5, x_max: 3.0,
-            y_min: -1.0, y_max: 11.0,
             iterations: 1000000,
-            workers: 4,
+            workers: 8,
         };
 
-        let flame = Flame { transformations: trans };
+        let flame = Flame {
+            transformations: trans,
+            x_min: -2.5, x_max: 3.0,
+            y_min: -1.0, y_max: 11.0,
+        };
 
         run(flame, conf)
     });
