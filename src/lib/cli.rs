@@ -1,6 +1,6 @@
 use clap::{Arg,App};
 
-pub fn make_app<'a,'b>() -> App<'a,'b> { 
+pub fn make_app<'a,'b>() -> App<'a,'b> {
     app_from_crate!()
         .arg(Arg::with_name("dimensions")
             .long("dims")
@@ -26,18 +26,14 @@ pub fn make_app<'a,'b>() -> App<'a,'b> {
             .help("Number of parallel jobs")
             .takes_value(true)
             .default_value("4"))
-        .arg(Arg::with_name("verbose")
-            .long("verbose")
-            .short("v")
-            .help("Verbose output"))
-        .arg(Arg::with_name("quiet")
-            .long("quiet")
-            .short("q")
-            .help("Supress all output to stdout"))
+        .arg(Arg::with_name("INPUT")
+            .help("Path to flame file to be compiled")
+            .required(true)
+            .index(1))
         .arg(Arg::with_name("OUTPUT")
             .help("Path to output file (must have .PNG or .JPG extension)")
             .required(true)
-            .index(1)
+            .index(2)
             .validator(check_output))
 }
 

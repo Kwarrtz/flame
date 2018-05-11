@@ -1,12 +1,42 @@
 use std::thread;
 use rand::thread_rng;
 use rand::distributions::{Range, IndependentSample};
-use nalgebra::{Affine2, Point2};
+use nalgebra::{Transform,Matrix3,Affine2, Point2};
+use std::fs::File;
+use serde_json;
 
 pub mod cli;
 
 #[cfg(test)]
 mod test;
+
+#[derive(Deserialize)]
+struct FlameSource {
+    bounds: [f32;4],
+    transformations: Vec<[f32;7]>,
+}
+
+impl FlameSource {
+    fn from_file(f : File) -> serde_json::Result<FlameSource> {
+        serde_json::from_reader(f)
+    }
+
+    fn to_flame(self) -> Flame {
+        let trans = self.transformations.iter().map(|t| {
+            let a = Transform::from_matrix_unchecked(Matrix3::new(
+                t[1], t[2], t[5],
+                t[3], t[4], t[6],
+                0.,   0.,    1.));
+            (t[0],a)
+        }).collect();
+
+        Flame {
+            x_min: self.bounds[0], x_max: self.bounds[1],
+            y_min: self.bounds[2], y_max: self.bounds[3],
+            transformations: trans,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Flame {
@@ -15,6 +45,12 @@ pub struct Flame {
     pub x_max: f32,
     pub y_min: f32,
     pub y_max: f32,
+}
+
+impl Flame {
+    pub fn from_file(f: File) -> serde_json::Result<Flame> {
+        Ok(FlameSource::from_file(f)?.to_flame())
+    }
 }
 
 #[derive(Clone,Copy)]
