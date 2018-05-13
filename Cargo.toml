@@ -1,6 +1,6 @@
 [package]
 name = "flame"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Dathan Ault-McCoy"]
 
 [dependencies]
@@ -12,3 +12,4 @@ serde = "*"
 serde_json = "*"
 serde_derive = "*"
 ansi_term = "*"
+statrs = "*"
