@@ -1,114 +1,63 @@
-#![feature(test)]
-
-extern crate image;
-extern crate nalgebra;
-extern crate rand;
-#[macro_use]
-extern crate clap;
-extern crate serde;
-extern crate serde_json;
-#[macro_use]
-extern crate serde_derive;
-extern crate ansi_term;
-
-use image::ColorType;
+use clap::Parser;
+use clap_num::si_number;
 use std::fs::File;
-use ansi_term::Color::Red;
-use clap::Arg;
+use std::path::PathBuf;
 
-mod lib;
-use lib::*;
+use flame::*;
 
-fn main() {
-    let app = app_from_crate!()
-        .arg(Arg::with_name("dimensions")
-            .long("dims")
-            .short("d")
-            .help("Dimensions (in pixels) of the output image")
-            .takes_value(true)
-            .multiple(true)
-            .require_delimiter(true)
-            .number_of_values(2)
-            .value_names(&["WIDTH","HEIGHT"])
-            .default_value("500,500"))
-        .arg(Arg::with_name("iterations")
-            .value_name("N")
-            .long("iters")
-            .short("i")
-            .help("Number of iterations of the chaos game to run")
-            .takes_value(true)
-            .default_value("8"))
-        .arg(Arg::with_name("jobs")
-            .value_name("N")
-            .long("jobs")
-            .short("j")
-            .help("Number of parallel jobs")
-            .takes_value(true)
-            .default_value("4"))
-        .arg(Arg::with_name("INPUT")
-            // .help("Path to flame file to be compiled"
-            .required(true)
-            .index(1))
-        .arg(Arg::with_name("OUTPUT")
-            .help("Path to output file (must have .PNG or .JPG extension)")
-            .required(true)
-            .index(2)
-            .validator(check_output));
-
-    let matches = app.get_matches();
-
-    let dims = values_t_or_exit!(matches,"dimensions",usize);
-    let iters = value_t_or_exit!(matches,"iterations",u32);
-    let workers = value_t_or_exit!(matches,"jobs",usize);
-    let path = matches.value_of("OUTPUT").unwrap();
-    let input_file = or_exit(File::open(matches.value_of("INPUT").unwrap()));
-
-    let conf = Config {
-        width: dims[0], height: dims[1],
-        iterations: usize::pow(10, iters),
-        workers: workers,
-    };
-
-    let flame = or_exit(Flame::from_file(input_file));
-
-    println!("Compiling flame...");
-
-    let before_run = std::time::Instant::now();
-
-    let buf = run(flame, conf);
-
-    let dur = before_run.elapsed();
-
-    match image::save_buffer(
-        path,
-        &buf[..],
-        conf.width as u32,
-        conf.height as u32,
-        ColorType::Gray(8)
-    ) {
-        Ok(()) => println!(
-            "Completed! Process took {}.{:03} seconds. Output written to '{}'",
-            dur.as_secs(),
-            dur.subsec_millis(),
-            path),
-        Err(e) => eprintln!("Failed to write output: {}", e)
-    };
+#[derive(Parser)]
+#[command(author, version, about)]
+struct Cli {
+    /// Path to flame descriptor file
+    input: PathBuf,
+    /// Path to output image (file extension must be JPEG or PNG)
+    output: PathBuf,
+    /// Number of iterations of the chaos game to run (accepts SI prefixes)
+    #[arg(short, long, default_value = "5M", value_parser = si_number::<usize>)]
+    iters: usize,
+    /// Number of parallel threads
+    #[arg(short, long, default_value_t = 5)]
+    jobs: usize,
+    /// Dimensions (in pixels) of the output image
+    #[arg(short, long, number_of_values = 2, default_values_t = [500, 500])]
+    #[arg(value_names = ["WIDTH", "HEIGHT"])]
+    dims: Vec<usize>,
 }
 
-fn or_exit<A,E>(x: Result<A,E>) -> A where E: std::fmt::Display {
-    match x {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("{} {}", Red.bold().paint("error:"), e);
-            std::process::exit(1)
+impl Cli {
+    fn to_config(&self) -> Config {
+        Config {
+            width: self.dims[0],
+            height: self.dims[1],
+            iterations: self.iters,
+            workers: self.jobs
         }
     }
 }
 
-fn check_output(path: String) -> Result<(),String> {
-    if path.ends_with(".png") || path.ends_with(".jpg") || path.ends_with(".jpeg") {
-        Ok(())
-    } else {
-        Err(String::from("the output file must have PNG or JPEG format"))
-    }
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::try_parse()?;
+    let input_file = File::open(&cli.input)?;
+    let conf = cli.to_config();
+
+    let flame: Flame = FlameSource::from_file(input_file)?.into();
+
+    println!("Rendering flame...");
+
+    let before_run = std::time::Instant::now();
+
+    let buckets = flame.run(conf);
+
+    let dur = before_run.elapsed();
+
+    save_buckets(&buckets, &cli.output)?;
+
+    println!(
+        "Completed! Process took {}.{:03} seconds. Output written to '{}'",
+        dur.as_secs(),
+        dur.subsec_millis(),
+        cli.output.display()
+    );
+
+    Ok(())
 }

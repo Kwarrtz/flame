@@ -2,14 +2,16 @@
 name = "flame"
 version = "0.5.0"
 authors = ["Dathan Ault-McCoy"]
+about = "An experimental fractal flame generator"
+edition = "2021"
 
 [dependencies]
-image = "*"
-rand = "*"
-nalgebra = "~0.13"
-clap = "~2.31"
-serde = "*"
-serde_json = "*"
-serde_derive = "*"
-ansi_term = "*"
-statrs = "*"
+image = "0.24"
+rand = "0.8.5"
+nalgebra = "0.32"
+clap = { version = "4.1", features = ["derive"] }
+clap-num = "1.0"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+ansi_term = "0.12"
+# statrs = "*"
