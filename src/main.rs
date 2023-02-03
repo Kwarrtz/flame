@@ -3,7 +3,8 @@ use clap_num::si_number;
 use std::fs::File;
 use std::path::PathBuf;
 
-use flame::*;
+use flame::core::*;
+use flame::file::*;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -16,8 +17,8 @@ struct Cli {
     #[arg(short, long, default_value = "5M", value_parser = si_number::<usize>)]
     iters: usize,
     /// Number of parallel threads
-    #[arg(short, long, default_value_t = 5)]
-    jobs: usize,
+    #[arg(short, long, default_value_t = 10)]
+    threads: usize,
     /// Dimensions (in pixels) of the output image
     #[arg(short, long, number_of_values = 2, default_values_t = [500, 500])]
     #[arg(value_names = ["WIDTH", "HEIGHT"])]
@@ -25,12 +26,12 @@ struct Cli {
 }
 
 impl Cli {
-    fn to_config(&self) -> Config {
-        Config {
+    fn to_config(&self) -> RenderConfig {
+        RenderConfig {
             width: self.dims[0],
             height: self.dims[1],
-            iterations: self.iters,
-            workers: self.jobs
+            iters: self.iters,
+            threads: self.threads
         }
     }
 }
@@ -46,11 +47,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let before_run = std::time::Instant::now();
 
-    let buckets = flame.run(conf);
+    let plotter = flame.run(conf);
 
     let dur = before_run.elapsed();
 
-    save_buckets(&buckets, &cli.output)?;
+    save_buckets(&plotter, &cli.output)?;
 
     println!(
         "Completed! Process took {}.{:03} seconds. Output written to '{}'",

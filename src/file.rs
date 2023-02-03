@@ -23,10 +23,12 @@ impl FlameSource {
             .collect();
 
         Flame {
-            x_min: self.bounds[0],
-            x_max: self.bounds[1],
-            y_min: self.bounds[2],
-            y_max: self.bounds[3],
+            bounds: Bounds {
+                x_min: self.bounds[0],
+                x_max: self.bounds[1],
+                y_min: self.bounds[2],
+                y_max: self.bounds[3],
+            },
             functions: funcs,
         }
     }
@@ -44,7 +46,9 @@ struct FunctionSource(f32, Variation, [f32; 6]);
 impl FunctionSource {
     fn to_function(&self) -> (f32, Function) {
         let t = Transform::from_matrix_unchecked(Matrix3::new(
-            self.2[0], self.2[1], self.2[4], self.2[2], self.2[3], self.2[5], 0.0, 0.0, 1.0,
+            self.2[0], self.2[1], self.2[4], 
+            self.2[2], self.2[3], self.2[5], 
+            0.0,       0.0,       1.0,
         ));
 
         let f = Function {
@@ -56,7 +60,7 @@ impl FunctionSource {
     }
 }
 
-pub fn save_buckets(buckets: &Buckets, path: impl AsRef<Path>) -> image::ImageResult<()> {
+pub fn save_buckets(buckets: &Plotter, path: impl AsRef<Path>) -> image::ImageResult<()> {
     image::save_buffer(
         path, 
         &buckets.to_buffer(), 

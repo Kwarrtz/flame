@@ -1,4 +1,4 @@
-use nalgebra::{Affine2, Point2 };
+use nalgebra::{Affine2, Point2, Transform, Matrix3 };
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use serde::Deserialize;
@@ -7,56 +7,73 @@ use std::thread;
 
 const PII: f32 = 1.0 / PI;
 
-#[derive(Clone)]
-pub struct Flame {
-    pub functions: Vec<(f32, Function)>,
+#[derive(Clone, Copy)]
+pub struct Bounds {
     pub x_min: f32,
     pub x_max: f32,
     pub y_min: f32,
     pub y_max: f32,
 }
 
+impl Bounds {
+    fn contains(&self, p: &Point2<f32>) -> bool {
+        let x = p[0];
+        let y = p[1];
+        x > self.x_min && x < self.x_max && y > self.y_min && y < self.y_max
+    }
+
+    fn width(&self) -> f32 {
+        self.x_max - self.x_min
+    }
+
+    fn height(&self) -> f32 {
+        self.y_max - self.y_min
+    }
+}
+
+#[derive(Clone)]
+pub struct Flame {
+    pub functions: Vec<(f32, Function)>,
+    pub bounds: Bounds,
+}
+
 #[derive(Clone, Copy)]
-pub struct Config {
+pub struct RenderConfig {
     pub width: usize,
     pub height: usize,
-    pub iterations: usize,
-    pub workers: usize,
+    pub iters: usize,
+    pub threads: usize,
 }
 
 impl Flame {
-    pub fn run(&self, c: Config) -> Buckets {
+    pub fn run(&self, c: RenderConfig) -> Plotter {
         thread::scope(|s| {
             let mut handles = Vec::new();
         
-            for _ in 0..c.workers {
+            for _ in 0..c.threads {
                 handles.push(s.spawn(|| self.run_single(c)));
             }
         
-            Buckets::accumulate(handles.into_iter().map(|h| h.join().unwrap()))
+            Plotter::accumulate(handles.into_iter().map(|h| h.join().unwrap()))
         })
     }
 
-    fn run_single(&self, c: Config) -> Buckets {
-        let mut buckets = Buckets::new(c.width, c.height);
+    fn run_single(&self, c: RenderConfig) -> Plotter {
+        let mut plotter = Plotter::new(c, self.bounds);
 
         let range = Uniform::new(0.0, 1.0);
         let mut rng = thread_rng();
 
         let mut point = Point2::new(range.sample(&mut rng), range.sample(&mut rng));
 
-        for _ in 0..(c.iterations / c.workers) {
+        for i in 0..(c.iters / c.threads) {
             point = self.rand_func(&mut rng).eval(point);
-            let mut x = point[0];
-            let mut y = point[1];
-            if x > self.x_min && x < self.x_max && y > self.y_min && y < self.y_max {
-                x = (x - self.x_min) * (c.width - 1) as f32 / (self.x_max - self.x_min);
-                y = (y - self.y_min) * (c.height - 1) as f32 / (self.y_max - self.y_min);
-                buckets.plot(x, y);
+            if i >= 20 {
+                plotter.plot(point);
             }
         }
 
-        buckets
+        plotter
     }
 
     fn rand_func(&self, rng: &mut impl Rng) -> &Function {
@@ -181,32 +198,46 @@ impl Variation {
     }
 }
 
-pub struct Buckets {
+pub struct Plotter {
     pub width: usize,
     pub height: usize,
+    bounds: Bounds,
+    trans: Affine2<f32>,
     counts: Vec<Vec<u32>>
 }
 
-impl Buckets {
-    fn new(width: usize, height: usize) -> Self {
-        Buckets {
-            width, height,
-            counts: vec![vec![0; width]; height]
+impl Plotter {
+    fn new(cfg: RenderConfig, bounds: Bounds) -> Self {
+        let w_scale = (cfg.width - 1) as f32 / bounds.width();
+        let h_scale =  (cfg.height - 1) as f32 / bounds.height();
+        let trans = Transform::from_matrix_unchecked(Matrix3::new(
+            w_scale, 0., -bounds.x_min * w_scale,
+            0., -h_scale, bounds.y_max * h_scale,
+            0., 0., 1.
+        ));
+
+        Plotter {
+            trans, bounds,
+            width: cfg.width, height: cfg.height,
+            counts: vec![vec![0; cfg.width]; cfg.height]
         }
     }
 
-    fn plot(&mut self, x: f32, y: f32) {
-        self.counts[y as usize][x as usize] += 1;
+    fn plot(&mut self, p: Point2<f32>) {
+        if self.bounds.contains(&p) {
+            let new_p = self.trans * p;
+            self.counts[new_p[1] as usize][new_p[0] as usize] += 1;
+        }
     }
 
-    fn accumulate(buckets_iter: impl IntoIterator<Item=Buckets>) -> Self {
-        let mut buckets_iter_ = buckets_iter.into_iter();
-        let mut buckets = buckets_iter_.next().expect("cannot accumulate empty Buckets iterator");
+    fn accumulate(plotters: impl IntoIterator<Item=Plotter>) -> Self {
+        let mut plotters_ = plotters.into_iter();
+        let mut plotter = plotters_.next().expect("cannot accumulate empty iterator of Plotters");
 
-        for b in buckets_iter_ {
-            assert_eq!(buckets.width, b.width);
-            assert_eq!(buckets.height, b.height);
-            let bucket_pairs = buckets.counts.iter_mut()
+        for b in plotters_ {
+            assert_eq!(plotter.width, b.width);
+            assert_eq!(plotter.height, b.height);
+            let bucket_pairs = plotter.counts.iter_mut()
                 .zip(b.counts.iter())
                 .map(|(r1, r2)| r1.iter_mut().zip(r2.iter()))
                 .flatten();
@@ -215,12 +246,12 @@ impl Buckets {
             }
         }
 
-        buckets
+        plotter
     }
 
     pub fn to_buffer(&self) -> Vec<u8> {
-        let counts = self.counts.iter().rev()
-            .map(IntoIterator::into_iter).flatten()
+        let counts = self.counts.iter()
+        .map(IntoIterator::into_iter).flatten()
             .map(|c| (c.clone() as f32).ln());
         let max = counts.clone().reduce(f32::max).unwrap();
         counts.map(|c| (c / max * 255.) as u8).collect()
