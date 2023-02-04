@@ -23,6 +23,9 @@ struct Cli {
     #[arg(short, long, number_of_values = 2, default_values_t = [500, 500])]
     #[arg(value_names = ["WIDTH", "HEIGHT"])]
     dims: Vec<usize>,
+    /// Produce image without color
+    #[arg(short, long)]
+    grayscale: bool,
 }
 
 impl Cli {
@@ -31,7 +34,8 @@ impl Cli {
             width: self.dims[0],
             height: self.dims[1],
             iters: self.iters,
-            threads: self.threads
+            threads: self.threads,
+            grayscale: self.grayscale,
         }
     }
 }
@@ -41,17 +45,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input_file = File::open(&cli.input)?;
     let conf = cli.to_config();
 
-    let flame: Flame = FlameSource::from_file(input_file)?.into();
+    let flame: Flame = FlameSource::from_file(input_file)?.to_flame();
 
     println!("Rendering flame...");
 
     let before_run = std::time::Instant::now();
 
-    let plotter = flame.run(conf);
+    let buffer = flame.render(conf);
 
     let dur = before_run.elapsed();
 
-    save_buckets(&plotter, &cli.output)?;
+    buffer.into_rgb8().save(&cli.output)?;
 
     println!(
         "Completed! Process took {}.{:03} seconds. Output written to '{}'",

@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path};
+use std::fs::File;
 use nalgebra::{Matrix3, Transform};
 use serde::Deserialize;
 
@@ -22,21 +22,15 @@ impl FlameSource {
             .collect();
 
         Flame {
-            bounds: Bounds {
-                x_min: self.bounds[0],
-                x_max: self.bounds[1],
-                y_min: self.bounds[2],
-                y_max: self.bounds[3],
-            },
+            bounds: Bounds::new(
+                self.bounds[0],
+                self.bounds[1],
+                self.bounds[2],
+                self.bounds[3],
+            ),
             functions: funcs,
             palette: self.palette.to_palette(),
         }
-    }
-}
-
-impl std::convert::From<FlameSource> for Flame {
-    fn from(fs: FlameSource) -> Flame {
-        fs.to_flame()
     }
 }
 
@@ -70,7 +64,7 @@ impl PaletteSource {
         let spacing = 256 / (self.0.len() - 1);
         let leftover = 256 % (self.0.len() - 1);
 
-        let mut p_colors = [Color::from_rgb(0, 0, 0); 256];
+        let mut p_colors = [Color::rgb(0, 0, 0); 256];
 
         let mut colors = self.0.iter().map(ColorSource::to_color);
         let mut start_color = colors.next().unwrap();
@@ -80,11 +74,11 @@ impl PaletteSource {
             let span = if i < leftover { spacing + 1 } else { spacing };
             for j in 0 .. span {
                 let t = j as f32 / (span - 1) as f32;
-                let c = Color {
-                    red: lerp(start_color.red, end_color.red, t),
-                    green: lerp(start_color.green, end_color.green, t),
-                    blue: lerp(start_color.blue, end_color.blue, t),
-                };
+                let c = Color::rgb(
+                    lerp(start_color.red, end_color.red, t),
+                    lerp(start_color.green, end_color.green, t),
+                    lerp(start_color.blue, end_color.blue, t)
+                );
                 p_colors[offset + j] = c;
             }
             offset += span;
@@ -104,19 +98,6 @@ struct ColorSource(u8, u8, u8);
 
 impl ColorSource {
     fn to_color(&self) -> Color {
-        Color {
-            red: self.0,
-            green: self.1,
-            blue: self.2,
-        }
+        Color::rgb(self.0, self.1, self.2)
     }
-}
-
-pub fn save_buckets(buckets: &Plotter, path: impl AsRef<Path>) -> image::ImageResult<()> {
-    image::save_buffer(
-        path, 
-        &buckets.to_buffer(), 
-        buckets.width as u32, buckets.height as u32, 
-        image::ColorType::Rgb8
-    )
 }
