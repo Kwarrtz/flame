@@ -1,3 +1,5 @@
+use std::ops::{MulAssign, AddAssign};
+
 use nalgebra::Point2;
 use num_traits::{NumAssign, Float, Zero, Bounded, Num, NumCast, ToPrimitive};
 use image::{RgbImage, GrayImage, ImageBuffer};
@@ -21,7 +23,16 @@ impl<T: Zero> Bucket<T> {
     }
 }
 
-impl<T: std::ops::AddAssign> std::ops::AddAssign for Bucket<T> {
+impl<T: MulAssign + Copy> MulAssign<T> for Bucket<T> {
+    fn mul_assign(&mut self, rhs: T) {
+        self.alpha *= rhs;
+        self.red *= rhs;
+        self.green *= rhs;
+        self.blue *= rhs;
+    }
+}
+
+impl<T: AddAssign> AddAssign for Bucket<T> {
     fn add_assign(&mut self, rhs: Self) {
         self.alpha += rhs.alpha;
         self.red += rhs.red;
@@ -77,42 +88,72 @@ impl<T: NumAssign + Copy> Buffer<T> {
     }
 
     pub fn combine(buffers: impl IntoIterator<Item=Self>) -> Self {
-        let mut buffers_ = buffers.into_iter();
-        let mut buffer = buffers_.next().expect("tried to accumulate empty iterator of Buffers");
+        let mut buffers_iter = buffers.into_iter();
+        let mut combined = buffers_iter.next()
+            .expect("tried to accumulate empty iterator of Buffers");
 
-        for b in buffers_ {
-            assert_eq!(buffer.width, b.width);
-            assert_eq!(buffer.height, b.height);
-            for (a, b) in buffer.buckets.iter_mut().zip(b.buckets.into_iter()) {
-                *a += b;
+        for buffer in buffers_iter {
+            assert_eq!(combined.width, buffer.width);
+            assert_eq!(combined.height, buffer.height);
+            let pairs = combined.buckets.iter_mut().zip(buffer.buckets.into_iter());
+            for (comb_bucket, new_bucket) in pairs {
+                *comb_bucket += new_bucket;
             }
         }
 
-        buffer
+        combined
     }
 }
 
 impl<T: Float + NumAssign + Copy + std::fmt::Debug> Buffer<T> {
-    pub fn scale_log(&mut self) {
+    pub fn log_density(&mut self) {
         for bucket in self.buckets.iter_mut() {
             if bucket.alpha.is_normal() {
                 let s = bucket.alpha.ln() / bucket.alpha;
-                bucket.alpha *= s;
-                bucket.red *= s;
-                bucket.green *= s;
-                bucket.blue *= s;
+                *bucket *= s;
             }
         }
     }
 
-    pub fn clip_convert<S: Bounded + Num + NumCast>(&self) -> Buffer<S> {
+    pub fn gamma(&mut self, gamma: T, vibrancy: T) {
+        for bucket in self.buckets.iter_mut() {
+            let g = gamma.recip() - T::one();
+            let iv = T::one() - vibrancy;
+            let alpha_s = bucket.alpha.powf(g * vibrancy);
+            bucket.alpha = bucket.alpha.powf(gamma.recip());
+            bucket.red *= bucket.red.powf(g * iv) * alpha_s;
+            bucket.green *= bucket.green.powf(g * iv) * alpha_s;
+            bucket.blue *=bucket.blue.powf(g * iv) * alpha_s;
+        }
+    } 
+
+    pub fn normalize(&mut self, preserve_color: bool) {
         let max = self.buckets.iter().cloned().reduce(Bucket::max).unwrap();
+        if preserve_color {
+            let max_rgb = T::max(max.red, T::max(max.green, max.blue));
+            for bucket in self.buckets.iter_mut() {
+                bucket.alpha /= max.alpha;
+                bucket.red /= max_rgb;
+                bucket.green /= max_rgb;
+                bucket.blue /= max_rgb;
+            }
+        } else {
+            for bucket in self.buckets.iter_mut() {
+                bucket.alpha /= max.alpha;
+                bucket.red /= max.red;
+                bucket.green /= max.green;
+                bucket.blue /= max.blue;
+            }
+        }
+    }
+
+    pub fn scale_convert<S: Bounded + Num + NumCast>(&self) -> Buffer<S> {
         let new = self.buckets.iter().map(|b| {
             Bucket {
-                alpha: clip(b.alpha / max.alpha),
-                red: clip(b.red / max.red),
-                blue: clip(b.blue / max.blue),
-                green: clip(b.green / max.green),
+                alpha: scale(b.alpha),
+                red: scale(b.red),
+                blue: scale(b.blue),
+                green: scale(b.green),
             }
         }).collect();
 
@@ -123,7 +164,7 @@ impl<T: Float + NumAssign + Copy + std::fmt::Debug> Buffer<T> {
     }
 }
 
-fn clip<T: Float, S: Bounded + Num + NumCast>(val: T) -> S {
+fn scale<T: Float, S: Bounded + Num + NumCast>(val: T) -> S {
     S::from(T::from(S::max_value()).unwrap() * T::max(T::zero(), val)).unwrap()
 }
 

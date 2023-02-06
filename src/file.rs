@@ -49,7 +49,7 @@ impl FunctionSource {
             weight: self.0,
             var: self.1,
             trans: t,
-            color: self.3,
+            color: (self.3 * 255.) as u8,
         }
     }
 }

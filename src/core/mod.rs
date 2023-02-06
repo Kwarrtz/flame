@@ -55,6 +55,9 @@ pub struct RenderConfig {
     pub iters: usize,
     pub threads: usize,
     pub grayscale: bool,
+    pub gamma: f64,
+    pub preserve_color: bool,
+    pub vibrancy: f64,
 }
 
 impl Flame {
@@ -74,17 +77,16 @@ impl Flame {
         let mut buffer: Buffer<u32> = Buffer::new(cfg.width, cfg.height);
         let trans = self.screen_transform(cfg);
 
-        let range = Uniform::new(0.0, 1.0);
         let mut rng = thread_rng();
 
-        let mut point = Point2::new(range.sample(&mut rng), range.sample(&mut rng));
-        let mut c = range.sample(&mut rng);
+        let mut point = Point2::new(rng.gen(), rng.gen());
+        let mut c: u8 = rng.gen();
 
         for i in 0 .. (cfg.iters / cfg.threads) {
             let f = self.rand_func(&mut rng);
 
             point = f.eval(point);
-            c = (c + f.color) / 2.;
+            c = (c + f.color) / 2;
 
             if i > 20 && self.bounds.contains(&point) {
                 let screen_point = trans * point;
@@ -102,8 +104,11 @@ impl Flame {
 
     pub fn render(&self, cfg: RenderConfig) -> DynamicImage {
         let mut buffer: Buffer<f64> = self.run(cfg).convert();
-        buffer.scale_log();
-        let image_buf = buffer.clip_convert();
+        buffer.log_density();
+        buffer.normalize(cfg.preserve_color);
+        buffer.gamma(cfg.gamma, cfg.vibrancy);
+        buffer.normalize(cfg.preserve_color);
+        let image_buf = buffer.scale_convert();
 
         if cfg.grayscale {
             DynamicImage::ImageLuma8(image_buf.into_gray8())
@@ -139,7 +144,7 @@ impl Flame {
 #[derive(Copy, Clone)]
 pub struct Function {
     pub weight: f32,
-    pub color: f32,
+    pub color: u8,
     pub var: Variation,
     pub trans: Affine2<f32>,
 }

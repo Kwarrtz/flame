@@ -21,11 +21,15 @@ impl Palette {
         Palette { colors }
     }
 
-    pub fn sample(&self, i: f32) -> Color {
-        if i >= 0. && i < 1. {
-            self.colors[(i * 256.) as usize]
-        } else {
-            panic!("Palette sample index must be between 0 and 1")
-        }
+    // pub fn sample(&self, i: f32) -> Color {
+    //     if i >= 0. && i < 1. {
+    //         self.colors[(i * 256.) as usize]
+    //     } else {
+    //         panic!("Palette sample index must be between 0 and 1")
+    //     }
+    // }
+
+    pub fn sample(&self, i: u8) -> Color {
+        self.colors[i as usize]
     }
 }
