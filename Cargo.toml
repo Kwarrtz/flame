@@ -1,6 +1,6 @@
 [package]
 name = "flame"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["Dathan Ault-McCoy"]
 about = "An experimental fractal flame generator"
 edition = "2021"

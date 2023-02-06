@@ -1,7 +1,7 @@
 use std::ops::{MulAssign, AddAssign};
 
 use nalgebra::Point2;
-use num_traits::{NumAssign, Float, Zero, Bounded, Num, NumCast, ToPrimitive};
+use num_traits::{NumAssign, Float, Zero, Bounded, Num, NumCast, ToPrimitive, one, zero, clamp};
 use image::{RgbImage, GrayImage, ImageBuffer};
 
 #[derive(Debug, Clone)]
@@ -12,43 +12,119 @@ pub struct Bucket<T> {
     pub blue: T
 }
 
+pub struct BucketIter<'a, T> {
+    bucket: &'a Bucket<T>,
+    i: u8
+}
+
+impl<'a, T> Iterator for BucketIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<&'a T> {
+        let c = match self.i {
+            0 => &self.bucket.alpha,
+            1 => &self.bucket.red,
+            2 => &self.bucket.green,
+            3 => &self.bucket.blue,
+            _ => return None
+        };
+
+        self.i += 1;
+
+        Some(c)
+    }
+}
+
+pub struct BucketIterMut<'a, T> {
+    bucket: &'a mut Bucket<T>,
+    i: u8
+}
+
+impl<'a, T> Iterator for BucketIterMut<'a, T> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<&'a mut T> {
+        let c = match self.i {
+            0 => &mut self.bucket.alpha,
+            1 => &mut self.bucket.red,
+            2 => &mut self.bucket.green,
+            3 => &mut self.bucket.blue,
+            _ => return None
+        };
+
+        self.i += 1;
+
+        let ptr = c as *mut T;
+        unsafe {
+            Some(&mut *ptr)
+        }
+    }
+}
+
+impl<T> Bucket<T> {
+    pub fn iter_rgb(&self) -> BucketIter<T> {
+        BucketIter { bucket: self, i: 1 }
+    }
+
+    pub fn iter_rgb_mut(&mut self) -> BucketIterMut<T> {
+        BucketIterMut { bucket: self, i: 1 }
+    }
+
+    pub fn iter_argb(&self) -> BucketIter<T> {
+        BucketIter { bucket: self, i: 0 }
+    }
+
+    pub fn iter_argb_mut(&mut self) -> BucketIterMut<T> {
+        BucketIterMut { bucket: self, i: 0 }
+    }
+
+    pub fn from_argb(mut iter: impl Iterator<Item=T>) -> Option<Bucket<T>> {
+        Some(Bucket {
+            alpha: iter.next()?,
+            red: iter.next()?,
+            green: iter.next()?,
+            blue: iter.next()?
+        })
+    }
+
+    pub fn map<S>(self, mut f: impl FnMut(T) -> S) -> Bucket<S> {
+        Bucket {
+            alpha: f(self.alpha),
+            red: f(self.red),
+            green: f(self.green),
+            blue: f(self.blue)
+        }
+    }
+}
+
 impl<T: Zero> Bucket<T> {
     fn new() -> Self {
         Bucket {
-            alpha: T::zero(),
-            red: T::zero(),
-            green: T::zero(),
-            blue: T::zero()
+            alpha: zero(),
+            red: zero(),
+            green: zero(),
+            blue: zero()
         }
     }
 }
 
 impl<T: MulAssign + Copy> MulAssign<T> for Bucket<T> {
     fn mul_assign(&mut self, rhs: T) {
-        self.alpha *= rhs;
-        self.red *= rhs;
-        self.green *= rhs;
-        self.blue *= rhs;
+        self.iter_argb_mut().for_each(|c| *c *= rhs);
     }
 }
 
-impl<T: AddAssign> AddAssign for Bucket<T> {
+impl<T: AddAssign + Copy> AddAssign for Bucket<T> {
     fn add_assign(&mut self, rhs: Self) {
-        self.alpha += rhs.alpha;
-        self.red += rhs.red;
-        self.green += rhs.green;
-        self.blue += rhs.blue;
+        self.iter_argb_mut().zip(rhs.iter_argb()).for_each(|(c, cr)| *c += *cr);
     }
 }
 
 impl<T: Float> Bucket<T> {
     fn max(self, other: Self) -> Self {
-        Bucket {
-            alpha: self.alpha.max(other.alpha),
-            red: self.red.max(other.red),
-            green: self.green.max(other.green),
-            blue: self.blue.max(other.blue),
-        }
+        Bucket::from_argb(
+            self.iter_argb().zip(other.iter_argb()).map(|(a,b)| T::max(*a, *b))
+        ).unwrap()
     }
 }
 
@@ -64,12 +140,7 @@ impl<T: ToPrimitive> Buffer<T> {
         Buffer {
             width: self.width, height: self.height,
             buckets: self.buckets.into_iter().map(|b| {
-                    Bucket {
-                        alpha: S::from(b.alpha).unwrap(),
-                        red: S::from(b.red).unwrap(),
-                        green: S::from(b.green).unwrap(),
-                        blue: S::from(b.blue).unwrap()
-                    }
+                    b.map(|c| S::from(c).unwrap())
                 }).collect()
         }
     }
@@ -105,7 +176,7 @@ impl<T: NumAssign + Copy> Buffer<T> {
     }
 }
 
-impl<T: Float + NumAssign + Copy + std::fmt::Debug> Buffer<T> {
+impl<T: Float + NumAssign + Copy> Buffer<T> {
     pub fn log_density(&mut self) {
         for bucket in self.buckets.iter_mut() {
             if bucket.alpha.is_normal() {
@@ -117,13 +188,13 @@ impl<T: Float + NumAssign + Copy + std::fmt::Debug> Buffer<T> {
 
     pub fn gamma(&mut self, gamma: T, vibrancy: T) {
         for bucket in self.buckets.iter_mut() {
-            let g = gamma.recip() - T::one();
+            let g = gamma.recip() - one();
             let iv = T::one() - vibrancy;
             let alpha_s = bucket.alpha.powf(g * vibrancy);
             bucket.alpha = bucket.alpha.powf(gamma.recip());
-            bucket.red *= bucket.red.powf(g * iv) * alpha_s;
-            bucket.green *= bucket.green.powf(g * iv) * alpha_s;
-            bucket.blue *=bucket.blue.powf(g * iv) * alpha_s;
+            for c in bucket.iter_rgb_mut() {
+                *c *= c.powf(g * iv) * alpha_s;
+            }
         }
     } 
 
@@ -133,29 +204,29 @@ impl<T: Float + NumAssign + Copy + std::fmt::Debug> Buffer<T> {
             let max_rgb = T::max(max.red, T::max(max.green, max.blue));
             for bucket in self.buckets.iter_mut() {
                 bucket.alpha /= max.alpha;
-                bucket.red /= max_rgb;
-                bucket.green /= max_rgb;
-                bucket.blue /= max_rgb;
+                for c in bucket.iter_rgb_mut() {
+                    *c /= max_rgb;
+                }
             }
         } else {
             for bucket in self.buckets.iter_mut() {
-                bucket.alpha /= max.alpha;
-                bucket.red /= max.red;
-                bucket.green /= max.green;
-                bucket.blue /= max.blue;
+                for (c, cm) in bucket.iter_argb_mut().zip(max.iter_argb()) {
+                    *c /= *cm;
+                }
+            }
+        }
+    }
+
+    pub fn normalize_clamp(&mut self) {
+        for bucket in self.buckets.iter_mut() {
+            for c in bucket.iter_argb_mut() {
+                *c = clamp(*c, zero(), one())
             }
         }
     }
 
     pub fn scale_convert<S: Bounded + Num + NumCast>(&self) -> Buffer<S> {
-        let new = self.buckets.iter().map(|b| {
-            Bucket {
-                alpha: scale(b.alpha),
-                red: scale(b.red),
-                blue: scale(b.blue),
-                green: scale(b.green),
-            }
-        }).collect();
+        let new = self.buckets.iter().cloned().map(|b| b.map(scale)).collect();
 
         Buffer {
             width: self.width, height: self.height,
@@ -165,7 +236,7 @@ impl<T: Float + NumAssign + Copy + std::fmt::Debug> Buffer<T> {
 }
 
 fn scale<T: Float, S: Bounded + Num + NumCast>(val: T) -> S {
-    S::from(T::from(S::max_value()).unwrap() * T::max(T::zero(), val)).unwrap()
+    S::from(T::from(S::max_value()).unwrap() * T::max(zero(), val)).unwrap()
 }
 
 impl Buffer<u8> {

@@ -14,41 +14,6 @@ mod color;
 pub use color::*;
 
 #[derive(Clone, Copy)]
-pub struct Bounds {
-    x_min: f32,
-    x_max: f32,
-    y_min: f32,
-    y_max: f32,
-}
-
-impl Bounds {
-    pub fn new(x_min: f32, x_max: f32, y_min: f32, y_max: f32) -> Self {
-        Bounds { x_min, x_max, y_min, y_max }
-    }
-
-    pub fn contains(&self, p: &Point2<f32>) -> bool {
-        let x = p[0];
-        let y = p[1];
-        x > self.x_min && x < self.x_max && y > self.y_min && y < self.y_max
-    }
-
-    pub fn width(&self) -> f32 {
-        self.x_max - self.x_min
-    }
-
-    pub fn height(&self) -> f32 {
-        self.y_max - self.y_min
-    }
-}
-
-#[derive(Clone)]
-pub struct Flame {
-    pub functions: Vec<Function>,
-    pub palette: Palette,
-    pub bounds: Bounds,
-}
-
-#[derive(Clone, Copy)]
 pub struct RenderConfig {
     pub width: usize,
     pub height: usize,
@@ -58,6 +23,13 @@ pub struct RenderConfig {
     pub gamma: f64,
     pub preserve_color: bool,
     pub vibrancy: f64,
+}
+
+#[derive(Clone)]
+pub struct Flame {
+    pub functions: Vec<Function>,
+    pub palette: Palette,
+    pub bounds: Bounds,
 }
 
 impl Flame {
@@ -75,7 +47,7 @@ impl Flame {
 
     fn run_single(&self, cfg: RenderConfig) -> Buffer<u32> {
         let mut buffer: Buffer<u32> = Buffer::new(cfg.width, cfg.height);
-        let trans = self.screen_transform(cfg);
+        let trans = self.screen_transform(cfg.width, cfg.height);
 
         let mut rng = thread_rng();
 
@@ -107,7 +79,7 @@ impl Flame {
         buffer.log_density();
         buffer.normalize(cfg.preserve_color);
         buffer.gamma(cfg.gamma, cfg.vibrancy);
-        buffer.normalize(cfg.preserve_color);
+        buffer.normalize_clamp();
         let image_buf = buffer.scale_convert();
 
         if cfg.grayscale {
@@ -130,9 +102,9 @@ impl Flame {
         &self.functions.iter().last().unwrap()
     }
 
-    fn screen_transform(&self, cfg: RenderConfig) -> Affine2<f32> {
-        let w_scale = (cfg.width - 1) as f32 / self.bounds.width();
-        let h_scale =  (cfg.height - 1) as f32 / self.bounds.height();
+    fn screen_transform(&self, width: usize, height: usize) -> Affine2<f32> {
+        let w_scale = (width - 1) as f32 / self.bounds.width();
+        let h_scale =  (height - 1) as f32 / self.bounds.height();
         Transform::from_matrix_unchecked(Matrix3::new(
             w_scale, 0., -self.bounds.x_min * w_scale,
             0., -h_scale, self.bounds.y_max * h_scale,
@@ -152,5 +124,33 @@ pub struct Function {
 impl Function {
     pub fn eval(&self, arg: Point2<f32>) -> Point2<f32> {
         self.var.eval(self.trans * arg)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Bounds {
+    x_min: f32,
+    x_max: f32,
+    y_min: f32,
+    y_max: f32,
+}
+
+impl Bounds {
+    pub fn new(x_min: f32, x_max: f32, y_min: f32, y_max: f32) -> Self {
+        Bounds { x_min, x_max, y_min, y_max }
+    }
+
+    pub fn contains(&self, p: &Point2<f32>) -> bool {
+        let x = p[0];
+        let y = p[1];
+        x > self.x_min && x < self.x_max && y > self.y_min && y < self.y_max
+    }
+
+    pub fn width(&self) -> f32 {
+        self.x_max - self.x_min
+    }
+
+    pub fn height(&self) -> f32 {
+        self.y_max - self.y_min
     }
 }

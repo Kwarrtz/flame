@@ -16,7 +16,7 @@ struct Cli {
     /// Number of iterations of the chaos game to run (accepts SI postfixes).
     /// 
     /// Higher values reduce noise but take longer to run.
-    #[arg(short, long, default_value = "5M", value_parser = si_number::<usize>)]
+    #[arg(short, long, default_value = "100M", value_parser = si_number::<usize>)]
     iters: usize,
     /// Number of parallel threads.
     #[arg(short, long, default_value_t = 10)]
@@ -25,18 +25,9 @@ struct Cli {
     #[arg(short, long, number_of_values = 2, default_values_t = [500, 500])]
     #[arg(value_names = ["WIDTH", "HEIGHT"])]
     dims: Vec<usize>,
-    /// Output a grayscale image, ignoring any specified color information.
-    #[arg(short='G', long)]
-    grayscale: bool,
     /// Gamma correction factor.
-    #[arg(short, long, default_value_t = 2.2)]
+    #[arg(short, long, default_value_t = 1.0)]
     gamma: f64,
-    /// Preserve the true ratios of the color channels.
-    /// 
-    /// When enabled, instead of scaling each color channel independently to 
-    /// fit the 8-bit range, they will be scaled by a common factor.
-    #[arg(short, long)]
-    preserve_color: bool,
     /// Gamma color vibrancy (between 0 and 1).
     /// 
     /// When this value is zero, gamma correction is applied independently to each color channel,
@@ -44,6 +35,15 @@ struct Cli {
     /// Values between 0 and 1 interpolate geometrically between these extremes.
     #[arg(short, long, default_value_t = 0.0)]
     vibrancy: f64,
+    /// Preserve the true ratios of the color channels.
+    /// 
+    /// When enabled, instead of scaling each color channel independently to 
+    /// fit the 8-bit range, they will be scaled by a common factor.
+    #[arg(short, long)]
+    preserve_color: bool,
+    /// Output a grayscale image, ignoring any specified color information.
+    #[arg(short='G', long)]
+    grayscale: bool,
 }
 
 impl Cli {
@@ -56,7 +56,7 @@ impl Cli {
             grayscale: self.grayscale,
             gamma: self.gamma,
             preserve_color: self.preserve_color,
-            vibrancy: self.vibrancy
+            vibrancy: self.vibrancy,
         }
     }
 }
@@ -72,11 +72,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let before_run = std::time::Instant::now();
 
-    let buffer = flame.render(cfg);
+    let img = flame.render(cfg);
 
     let dur = before_run.elapsed();
 
-    buffer.into_rgb8().save(&cli.output)?;
+    img.save(&cli.output)?;
 
     println!(
         "Completed! Rendered in {}.{:03} seconds. Output written to '{}'",
