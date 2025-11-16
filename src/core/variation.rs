@@ -8,7 +8,7 @@ const PII: f32 = 1.0 / PI;
 pub enum Variation {
     Id,
     Sinusoidal,
-    Spherical, // r
+    Spherical, // r2
     Swirl, // r
     Horseshoe, // r
     Polar, // r, theta
@@ -23,8 +23,12 @@ pub enum Variation {
     Fisheye, // r
     Eyefish,
     Exponential,
+    Power, // r, theta
+    Cosine,
     Cylinder,
     Tangent,
+    Bubble, // r2
+    Cross,
     Blob(f32, f32, f32), // theta
     PDJ(f32, f32, f32, f32),
 }
@@ -40,7 +44,7 @@ impl Variation {
             match r_ {
                 Some(r__) => r__,
                 None => {
-                    let r__ = x.powi(2) + y.powi(2);
+                    let r__ = (x*x + y*y).sqrt();
                     r_ = Some(r__);
                     r__
                 }
@@ -72,8 +76,11 @@ impl Variation {
         let (xo, yo) = match self {
             Id => (x, y),
             Sinusoidal => (x.sin(), y.sin()),
-            Spherical => (x / r(), y / r()),
-            Swirl => (x * r().sin() - y * r().cos(), x * r().cos() + y * r().sin()),
+            Spherical => { let r2 = x*x + y*y; (x / r2, y / r2) }
+            Swirl => {
+                let r2 = x*x + y*y;
+                (x * r2.sin() - y * r2.cos(), x * r2.cos() + y * r2.sin())
+            }
             Horseshoe => ((x - y) * (x + y) / r(), 2.0 * x * y / r()),
             Polar => (theta() * PII, r() - 1.0),
             Handkerchief => ((theta() + r()).sin(), (theta() - r()).cos()),
@@ -87,6 +94,7 @@ impl Variation {
                 let p1 = (theta() - r()).cos().powi(3);
                 (r() * (p0 + p1), r() * (p0 - p1))
             }
+            // Julia =>
             Bent => {
                 let a = if x >= 0.0 { x } else { 2.0 * x };
                 let b = if y >= 0.0 { y } else { 0.5 * y };
@@ -98,8 +106,15 @@ impl Variation {
                 (x - 1.0).exp() * (PI * y).cos(),
                 (x - 1.0).exp() * (PI * y).sin(),
             ),
+            Power => {
+                let a = r().powf(theta().sin() - 1.0);
+                (a * x, a * y)
+            }
+            Cosine => ((PI * x).cos() * y.cosh(), -(PI * x).sin() * y.sinh()),
             Cylinder => (x.sin(), y),
             Tangent => (x.sin() / y.cos(), y.tan()),
+            Bubble => { let a = 4.0 / (x*x + y*y + 4.0); (a * x, a * y ) }
+            Cross => { let a = 1.0 / (x*x - y*y).abs(); (a * x, a * x) }
             Blob(h, l, w) => {
                 let a = r() * (l + (h - l) / 2.0 * (1.0 + (theta() * w).sin()));
                 (a * theta().cos(), a * theta().sin())

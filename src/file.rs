@@ -1,24 +1,41 @@
-use std::fs::File;
+use std::path::Path;
 use nalgebra::{Matrix3, Transform};
 use serde::Deserialize;
 
 use super::core::*;
+use super::error::*;
 
 #[derive(Deserialize)]
+#[serde(rename="Flame")]
 pub struct FlameSource {
     bounds: [f32; 4],
-    functions: Vec<FunctionSource>,
+    #[serde(rename="final", default)]
+    last: FunctionSource,
+    functions: Vec<FunctionEntrySource>,
     palette: PaletteSource,
 }
 
 impl FlameSource {
-    pub fn from_file(f: File) -> serde_json::Result<FlameSource> {
-        serde_json::from_reader(f)
+    pub fn from_json(src: &str) -> serde_json::Result<FlameSource> {
+        serde_json::from_str(src)
+    }
+
+    pub fn from_ron(src: &str) -> ron::error::SpannedResult<FlameSource> {
+        ron::from_str(src)
+    }
+
+    pub fn from_file(path: impl AsRef<Path>) -> Result<FlameSource, FlameError> {
+        let contents = std::fs::read_to_string(path.as_ref())?;
+        Ok(match path.as_ref().extension().ok_or(FlameError::ExtensionError)?.to_str() {
+            Some("json") => FlameSource::from_json(&contents)?,
+            Some("ron") => FlameSource::from_ron(&contents)?,
+            _ => return Err(FlameError::ExtensionError)
+        })
     }
 
     pub fn to_flame(self) -> Flame {
         let funcs = self.functions.iter()
-            .map(FunctionSource::to_function)
+            .map(FunctionEntrySource::to_function_entry)
             .collect();
 
         Flame {
@@ -28,6 +45,7 @@ impl FlameSource {
                 self.bounds[2],
                 self.bounds[3],
             ),
+            last: self.last.to_function(),
             functions: funcs,
             palette: self.palette.to_palette(),
         }
@@ -35,26 +53,46 @@ impl FlameSource {
 }
 
 #[derive(Deserialize)]
-struct FunctionSource(f32, Variation, [f32; 6], f32);
+#[serde(rename="Function")]
+struct FunctionSource(Variation, [f32; 6]);
 
 impl FunctionSource {
     fn to_function(&self) -> Function {
         let t = Transform::from_matrix_unchecked(Matrix3::new(
-            self.2[0], self.2[1], self.2[4], 
-            self.2[2], self.2[3], self.2[5], 
+            self.1[0], self.1[1], self.1[4],
+            self.1[2], self.1[3], self.1[5],
             0.0,       0.0,       1.0,
         ));
 
         Function {
-            weight: self.0,
-            var: self.1,
+            var: self.0,
             trans: t,
-            color: (self.3 * 255.) as u8,
+        }
+    }
+}
+
+impl Default for FunctionSource {
+    fn default() -> Self {
+        FunctionSource(Variation::Id, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename="FunctionEntry")]
+struct FunctionEntrySource(f32, Variation, [f32; 6], f32);
+
+impl FunctionEntrySource {
+    fn to_function_entry(&self) -> FunctionEntry {
+        FunctionEntry {
+            weight: self.0,
+            color: (self.3 * 256.0) as u8,
+            function: FunctionSource(self.1, self.2).to_function()
         }
     }
 }
 
 #[derive(Deserialize)]
+#[serde(transparent, rename="Palette")]
 struct PaletteSource(Vec<ColorSource>);
 
 impl PaletteSource {

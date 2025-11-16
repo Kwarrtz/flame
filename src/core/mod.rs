@@ -23,11 +23,13 @@ pub struct RenderConfig {
     pub gamma: f64,
     pub preserve_color: bool,
     pub vibrancy: f64,
+    pub samples: usize,
 }
 
 #[derive(Clone)]
 pub struct Flame {
-    pub functions: Vec<Function>,
+    pub functions: Vec<FunctionEntry>,
+    pub last: Function,
     pub palette: Palette,
     pub bounds: Bounds,
 }
@@ -36,18 +38,21 @@ impl Flame {
     pub fn run(&self, cfg: RenderConfig) -> Buffer<u32> {
         thread::scope(|s| {
             let mut handles = Vec::new();
-        
+
             for _ in 0 .. cfg.threads {
                 handles.push(s.spawn(|| self.run_single(cfg)));
             }
-        
+
             Buffer::combine(handles.into_iter().map(|h| h.join().unwrap()))
         })
     }
 
     fn run_single(&self, cfg: RenderConfig) -> Buffer<u32> {
-        let mut buffer: Buffer<u32> = Buffer::new(cfg.width, cfg.height);
-        let trans = self.screen_transform(cfg.width, cfg.height);
+        let super_width = cfg.width * (1 + 2 * cfg.samples) + 2 * cfg.samples;
+        let super_height = cfg.height * (1 + 2 * cfg.samples) + 2 * cfg.samples;
+
+        let mut buffer: Buffer<u32> = Buffer::new(super_width, super_height);
+        let trans = self.screen_transform(super_width, super_height);
 
         let mut rng = thread_rng();
 
@@ -55,10 +60,11 @@ impl Flame {
         let mut c: u8 = rng.gen();
 
         for i in 0 .. (cfg.iters / cfg.threads) {
-            let f = self.rand_func(&mut rng);
+            let entry = self.rand_entry(&mut rng);
 
-            point = f.eval(point);
-            c = (c + f.color) / 2;
+            point = entry.function.eval(point);
+            point = self.last.eval(point);
+            c = ((c as u16 + entry.color as u16) / 2) as u8;
 
             if i > 20 && self.bounds.contains(&point) {
                 let screen_point = trans * point;
@@ -79,6 +85,7 @@ impl Flame {
         buffer.log_density();
         buffer.normalize(cfg.preserve_color);
         buffer.gamma(cfg.gamma, cfg.vibrancy);
+        buffer = buffer.filter(cfg.samples);
         buffer.normalize_clamp();
         let image_buf = buffer.scale_convert();
 
@@ -89,7 +96,7 @@ impl Flame {
         }
     }
 
-    fn rand_func(&self, rng: &mut impl Rng) -> &Function {
+    fn rand_entry(&self, rng: &mut impl Rng) -> &FunctionEntry {
         let r = Uniform::new(0.0, 1.0).sample(rng);
         let mut x = 0.0;
         for f in &self.functions {
@@ -98,7 +105,7 @@ impl Flame {
                 return f;
             }
         }
-    
+
         &self.functions.iter().last().unwrap()
     }
 
@@ -113,10 +120,15 @@ impl Flame {
     }
 }
 
-#[derive(Copy, Clone)]
-pub struct Function {
+#[derive(Clone)]
+pub struct FunctionEntry {
+    pub function: Function,
     pub weight: f32,
-    pub color: u8,
+    pub color: u8
+}
+
+#[derive(Clone)]
+pub struct Function {
     pub var: Variation,
     pub trans: Affine2<f32>,
 }
