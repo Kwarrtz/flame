@@ -33,22 +33,26 @@ impl FlameSource {
             _ => return Err(FlameError::ExtensionError)
         })
     }
+}
 
-    pub fn to_flame(self) -> Result<Flame, FlameError> {
-        let funcs = self.functions.iter()
-            .map(FunctionEntrySource::to_function_entry)
+impl TryFrom<FlameSource> for Flame {
+    type Error = FlameError;
+
+    fn try_from(src: FlameSource) -> Result<Flame, FlameError> {
+        let funcs = src.functions.into_iter()
+            .map(FunctionEntry::from)
             .collect();
 
         Ok(Flame {
             bounds: Bounds::new(
-                self.bounds[0],
-                self.bounds[1],
-                self.bounds[2],
-                self.bounds[3],
+                src.bounds[0],
+                src.bounds[1],
+                src.bounds[2],
+                src.bounds[3],
             ),
-            last: self.last.to_function(),
+            last: src.last.into(),
             functions: funcs,
-            palette: self.palette.to_palette()?,
+            palette: src.palette.try_into()?,
         })
     }
 }
@@ -57,16 +61,16 @@ impl FlameSource {
 #[serde(rename="Function")]
 struct FunctionSource(Variation, [f32; 6]);
 
-impl FunctionSource {
-    fn to_function(&self) -> Function {
+impl From<FunctionSource> for Function {
+    fn from(src: FunctionSource) -> Function {
         let t = Transform::from_matrix_unchecked(Matrix3::new(
-            self.1[0], self.1[1], self.1[4],
-            self.1[2], self.1[3], self.1[5],
+            src.1[0], src.1[1], src.1[4],
+            src.1[2], src.1[3], src.1[5],
             0.0,       0.0,       1.0,
         ));
 
         Function {
-            var: self.0,
+            var: src.0,
             trans: t,
         }
     }
@@ -84,13 +88,13 @@ const fn a_half() -> f32 { 0.5 }
 #[serde(rename="FunctionEntry")]
 struct FunctionEntrySource(f32, Variation, [f32; 6], f32, #[serde(default="a_half")] f32);
 
-impl FunctionEntrySource {
-    fn to_function_entry(&self) -> FunctionEntry {
+impl From<FunctionEntrySource> for FunctionEntry {
+    fn from(src: FunctionEntrySource) -> FunctionEntry {
         FunctionEntry {
-            weight: self.0,
-            color: self.3,
-            color_speed: self.4,
-            function: FunctionSource(self.1, self.2).to_function()
+            weight: src.0,
+            color: src.3,
+            color_speed: src.4,
+            function: FunctionSource(src.1, src.2).into()
         }
     }
 }
@@ -102,20 +106,21 @@ struct PaletteSource {
     keys: Vec<f32>
 }
 
-impl PaletteSource {
-    fn to_palette(self) -> Result<Palette, FlameError> {
-        let colors = self.colors.iter().map(ColorSource::to_color);
-        let keys = Some(self.keys).filter(|v| !v.is_empty());
-        println!("{:?}", keys);
-        Palette::new(colors, keys).map_err(FlameError::PaletteError)
+impl TryFrom<PaletteSource> for Palette {
+    type Error = PaletteError;
+
+    fn try_from(src: PaletteSource) -> Result<Palette, PaletteError> {
+        let colors = src.colors.into_iter().map(Color::from);
+        let keys = Some(src.keys).filter(|v| !v.is_empty());
+        Palette::new(colors, keys)
     }
 }
 
 #[derive(Deserialize)]
 struct ColorSource(u8, u8, u8);
 
-impl ColorSource {
-    fn to_color(&self) -> Color {
-        Color::rgb(self.0, self.1, self.2)
+impl From<ColorSource> for Color {
+    fn from(src: ColorSource) -> Color {
+        Color::rgb(src.0, src.1, src.2)
     }
 }
