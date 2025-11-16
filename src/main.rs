@@ -26,7 +26,7 @@ struct Cli {
     #[arg(value_names = ["WIDTH", "HEIGHT"])]
     dims: Vec<usize>,
     /// Gamma correction factor.
-    #[arg(short, long, default_value_t = 1.0)]
+    #[arg(short, long, default_value_t = 2.2)]
     gamma: f64,
     /// Gamma color vibrancy (between 0 and 1).
     ///
@@ -70,7 +70,7 @@ fn run() -> Result<(), FlameError> {
     // let input_file = File::open(&cli.input)?;
     let cfg = cli.to_config();
 
-    let flame: Flame = FlameSource::from_file(cli.input)?.to_flame();
+    let flame: Flame = FlameSource::from_file(cli.input)?.to_flame()?;
 
     println!("Rendering flame...");
 

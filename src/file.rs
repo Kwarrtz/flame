@@ -12,6 +12,7 @@ pub struct FlameSource {
     #[serde(rename="final", default)]
     last: FunctionSource,
     functions: Vec<FunctionEntrySource>,
+    // #[serde(flatten)]
     palette: PaletteSource,
 }
 
@@ -33,12 +34,12 @@ impl FlameSource {
         })
     }
 
-    pub fn to_flame(self) -> Flame {
+    pub fn to_flame(self) -> Result<Flame, FlameError> {
         let funcs = self.functions.iter()
             .map(FunctionEntrySource::to_function_entry)
             .collect();
 
-        Flame {
+        Ok(Flame {
             bounds: Bounds::new(
                 self.bounds[0],
                 self.bounds[1],
@@ -47,8 +48,8 @@ impl FlameSource {
             ),
             last: self.last.to_function(),
             functions: funcs,
-            palette: self.palette.to_palette(),
-        }
+            palette: self.palette.to_palette()?,
+        })
     }
 }
 
@@ -77,58 +78,37 @@ impl Default for FunctionSource {
     }
 }
 
+const fn a_half() -> f32 { 0.5 }
+
 #[derive(Deserialize)]
 #[serde(rename="FunctionEntry")]
-struct FunctionEntrySource(f32, Variation, [f32; 6], f32);
+struct FunctionEntrySource(f32, Variation, [f32; 6], f32, #[serde(default="a_half")] f32);
 
 impl FunctionEntrySource {
     fn to_function_entry(&self) -> FunctionEntry {
         FunctionEntry {
             weight: self.0,
-            color: (self.3 * 256.0) as u8,
+            color: self.3,
+            color_speed: self.4,
             function: FunctionSource(self.1, self.2).to_function()
         }
     }
 }
 
 #[derive(Deserialize)]
-#[serde(transparent, rename="Palette")]
-struct PaletteSource(Vec<ColorSource>);
-
-impl PaletteSource {
-    fn to_palette(&self) -> Palette {
-        if self.0.len() > 256 { panic!("too many colors in palette description"); }
-
-        let spacing = 256 / (self.0.len() - 1);
-        let leftover = 256 % (self.0.len() - 1);
-
-        let mut p_colors = [Color::rgb(0, 0, 0); 256];
-
-        let mut colors = self.0.iter().map(ColorSource::to_color);
-        let mut start_color = colors.next().unwrap();
-        let mut offset = 0;
-
-        for (i, end_color) in colors.enumerate() {
-            let span = if i < leftover { spacing + 1 } else { spacing };
-            for j in 0 .. span {
-                let t = j as f32 / (span - 1) as f32;
-                let c = Color::rgb(
-                    lerp(start_color.red, end_color.red, t),
-                    lerp(start_color.green, end_color.green, t),
-                    lerp(start_color.blue, end_color.blue, t)
-                );
-                p_colors[offset + j] = c;
-            }
-            offset += span;
-            start_color = end_color;
-        }
-
-        Palette::new(p_colors)
-    }
+struct PaletteSource {
+    colors: Vec<ColorSource>,
+    #[serde(default)]
+    keys: Vec<f32>
 }
 
-fn lerp(a: u8, b: u8, t: f32) -> u8 {
-    (a as f32 * (1. - t) + b as f32 * t) as u8
+impl PaletteSource {
+    fn to_palette(self) -> Result<Palette, FlameError> {
+        let colors = self.colors.iter().map(ColorSource::to_color);
+        let keys = Some(self.keys).filter(|v| !v.is_empty());
+        println!("{:?}", keys);
+        Palette::new(colors, keys).map_err(FlameError::PaletteError)
+    }
 }
 
 #[derive(Deserialize)]

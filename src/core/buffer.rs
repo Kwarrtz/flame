@@ -258,12 +258,13 @@ impl<T: Float + NumAssign + Copy> Buffer<T> {
     }
 
     pub fn gamma(&mut self, gamma: T, vibrancy: T) {
+        let p = gamma.recip() - T::one();
+        let p_alpha = p * vibrancy;
+        let p_channel = p * (T::one() - vibrancy);
         for bucket in self.buckets.iter_mut() {
-            let g = gamma.recip() - one();
-            let giv = g * (T::one() - vibrancy);
-            let alpha_s = bucket.alpha.powf(g * vibrancy);
+            let alpha_scale = bucket.alpha.powf(p_alpha);
             for c in bucket.iter_argb_mut() {
-                *c *= c.powf(giv) * alpha_s;
+                *c *= c.powf(p_channel) * alpha_scale;
             }
         }
     }

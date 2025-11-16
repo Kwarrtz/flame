@@ -57,19 +57,20 @@ impl Flame {
         let mut rng = thread_rng();
 
         let mut point = Point2::new(rng.gen(), rng.gen());
-        let mut c: u8 = rng.gen();
+        let mut c: f32 = rng.gen();
 
         for i in 0 .. (cfg.iters / cfg.threads) {
             let entry = self.rand_entry(&mut rng);
 
             point = entry.function.eval(point);
             point = self.last.eval(point);
-            c = ((c as u16 + entry.color as u16) / 2) as u8;
+            c *= 1.0 - entry.color_speed;
+            c += entry.color * entry.color_speed;
 
             if i > 20 && self.bounds.contains(&point) {
                 let screen_point = trans * point;
                 let bucket = buffer.at_mut(screen_point);
-                let color = self.palette.sample(c);
+                let color = self.palette.sample(c).expect("color index out of bounds");
                 bucket.alpha += 1;
                 bucket.red += color.red as u32;
                 bucket.green += color.green as u32;
@@ -124,7 +125,8 @@ impl Flame {
 pub struct FunctionEntry {
     pub function: Function,
     pub weight: f32,
-    pub color: u8
+    pub color: f32,
+    pub color_speed: f32,
 }
 
 #[derive(Clone)]
