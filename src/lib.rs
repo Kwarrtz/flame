@@ -1,4 +1,3 @@
-use image::DynamicImage;
 use nalgebra::{Affine2, Point2, Transform, Matrix3 };
 use rand::distributions::Uniform;
 use rand::prelude::*;
@@ -13,17 +12,21 @@ use buffer::*;
 mod color;
 pub use color::*;
 
+mod error;
+pub use error::*;
+
+mod file;
+pub use file::*;
+
+mod render;
+pub use render::*;
+
 #[derive(Clone, Copy)]
-pub struct RenderConfig {
+pub struct RunConfig {
     pub width: usize,
     pub height: usize,
     pub iters: usize,
     pub threads: usize,
-    pub grayscale: bool,
-    pub gamma: f64,
-    pub preserve_color: bool,
-    pub vibrancy: f64,
-    pub samples: usize,
 }
 
 #[derive(Clone)]
@@ -35,7 +38,7 @@ pub struct Flame {
 }
 
 impl Flame {
-    pub fn run(&self, cfg: RenderConfig) -> Buffer<u32> {
+    pub fn run(&self, cfg: RunConfig) -> Buffer<u32> {
         thread::scope(|s| {
             let mut handles = Vec::new();
 
@@ -47,12 +50,9 @@ impl Flame {
         })
     }
 
-    fn run_single(&self, cfg: RenderConfig) -> Buffer<u32> {
-        let super_width = cfg.width * (1 + 2 * cfg.samples) + 2 * cfg.samples;
-        let super_height = cfg.height * (1 + 2 * cfg.samples) + 2 * cfg.samples;
-
-        let mut buffer: Buffer<u32> = Buffer::new(super_width, super_height);
-        let trans = self.screen_transform(super_width, super_height);
+    fn run_single(&self, cfg: RunConfig) -> Buffer<u32> {
+        let mut buffer: Buffer<u32> = Buffer::new(cfg.width, cfg.height);
+        let trans = self.screen_transform(cfg.width, cfg.height);
 
         let mut rng = thread_rng();
 
@@ -79,22 +79,6 @@ impl Flame {
         }
 
         buffer
-    }
-
-    pub fn render(&self, cfg: RenderConfig) -> DynamicImage {
-        let mut buffer: Buffer<f64> = self.run(cfg).convert();
-        buffer.log_density();
-        buffer.normalize(cfg.preserve_color);
-        buffer.gamma(cfg.gamma, cfg.vibrancy);
-        buffer = buffer.filter(cfg.samples);
-        buffer.normalize_clamp();
-        let image_buf = buffer.scale_convert();
-
-        if cfg.grayscale {
-            DynamicImage::ImageLuma8(image_buf.into_gray8())
-        } else {
-            DynamicImage::ImageRgb8(image_buf.into_rgb8())
-        }
     }
 
     fn rand_entry(&self, rng: &mut impl Rng) -> &FunctionEntry {

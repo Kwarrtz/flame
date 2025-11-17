@@ -2,8 +2,7 @@ use std::path::Path;
 use nalgebra::{Matrix3, Transform};
 use serde::Deserialize;
 
-use super::core::*;
-use super::error::*;
+use super::{FlameError,Flame,FunctionEntry,Function,Variation,Palette,PaletteError,Color,Bounds};
 
 #[derive(Deserialize)]
 #[serde(rename="Flame")]

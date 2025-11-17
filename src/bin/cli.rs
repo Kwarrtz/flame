@@ -4,11 +4,6 @@ use std::path::PathBuf;
 
 use flame::*;
 
-mod file;
-use file::*;
-mod error;
-use error::*;
-
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
@@ -38,12 +33,6 @@ struct Cli {
     /// Values between 0 and 1 interpolate geometrically between these extremes.
     #[arg(short, long, default_value_t = 0.0)]
     vibrancy: f64,
-    /// Preserve the true ratios of the color channels.
-    ///
-    /// When enabled, instead of scaling each color channel independently to
-    /// fit the 8-bit range, they will be scaled by a common factor.
-    #[arg(short, long)]
-    preserve_color: bool,
     /// Output a grayscale image, ignoring any specified color information.
     #[arg(short='G', long)]
     grayscale: bool,
@@ -53,24 +42,30 @@ struct Cli {
 }
 
 impl Cli {
-    fn render_config(&self) -> RenderConfig {
-        RenderConfig {
+    fn run_config(&self) -> RunConfig {
+        RunConfig {
             width: self.dims[0],
             height: self.dims[1],
             iters: self.iters,
             threads: self.threads,
-            grayscale: self.grayscale,
+        }
+    }
+
+    fn render_config(&self) -> RenderConfig {
+        RenderConfig {
+            width: self.dims[0],
+            height: self.dims[1],
             gamma: self.gamma,
-            preserve_color: self.preserve_color,
             vibrancy: self.vibrancy,
-            samples: self.samples,
+            filter_radius: self.samples
         }
     }
 }
 
-fn run() -> Result<(), CliError> {
+fn run() -> Result<(), FlameError> {
     let cli = Cli::parse();
-    let cfg = cli.render_config();
+    let run_cfg = cli.run_config();
+    let render_cfg = cli.render_config();
 
     let flame: Flame = FlameSource::from_file(cli.input)?.try_into()?;
 
@@ -78,11 +73,12 @@ fn run() -> Result<(), CliError> {
 
     let before_run = std::time::Instant::now();
 
-    let img = flame.render(cfg);
+    let buffer = flame.run(run_cfg);
+    let img_buffer = buffer.render(render_cfg);
 
     let dur = before_run.elapsed();
 
-    img.save(&cli.output)?;
+    img_buffer.to_dynamic8(cli.grayscale).save(&cli.output)?;
 
     println!(
         "Completed! Rendered in {}.{:03} seconds. Output written to '{}'",

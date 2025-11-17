@@ -1,4 +1,4 @@
-use thiserror::Error;
+use super::error::PaletteError;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Color {
@@ -80,14 +80,4 @@ impl Palette {
 
         Some(Color::lerp(self.colors[i], self.colors[i+1], t))
     }
-}
-
-#[derive(Error, Debug)]
-pub enum PaletteError {
-    #[error("at least one key out of bounds (must be strictly between 0 and 1)")]
-    OutOfBounds,
-    #[error("keys not strictly monotonically increasing")]
-    NonMonotonic,
-    #[error("incorrect number of keys")]
-    IncorrectNumber
 }
