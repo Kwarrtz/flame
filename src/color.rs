@@ -70,10 +70,11 @@ impl Palette {
     pub fn sample(&self, c: f32) -> Option<Color> {
         if c < 0.0 || c > 1.0 { return None };
 
-        let i = match self.keys.iter().position(|&k| k < c) {
+        let i = match self.keys.iter().rposition(|&k| k < c) {
             None => 0,
             Some(j) => j + 1
         };
+        // println!("{}", i);
         let kbefore = self.keys.get(i - 1).unwrap_or(&0.0);
         let kafter = self.keys.get(i).unwrap_or(&1.0);
         let t = (c - kbefore) / (kafter - kbefore);
