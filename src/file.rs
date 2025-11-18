@@ -2,6 +2,8 @@ use std::path::Path;
 use nalgebra::{Matrix3, Transform};
 use serde::Deserialize;
 
+use crate::FunctionEntryError;
+
 use super::{FlameError,Flame,FunctionEntry,Function,Variation,Palette,PaletteError,Color,Bounds};
 
 #[derive(Deserialize)]
@@ -39,8 +41,8 @@ impl TryFrom<FlameSource> for Flame {
 
     fn try_from(src: FlameSource) -> Result<Flame, FlameError> {
         let funcs = src.functions.into_iter()
-            .map(FunctionEntry::from)
-            .collect();
+            .map(FunctionEntry::try_from)
+            .collect::<Result<_,_>>()?;
 
         Ok(Flame {
             bounds: Bounds::new(
@@ -87,14 +89,11 @@ const fn a_half() -> f32 { 0.5 }
 #[serde(rename="FunctionEntry")]
 struct FunctionEntrySource(f32, Variation, [f32; 6], f32, #[serde(default="a_half")] f32);
 
-impl From<FunctionEntrySource> for FunctionEntry {
-    fn from(src: FunctionEntrySource) -> FunctionEntry {
-        FunctionEntry {
-            weight: src.0,
-            color: src.3,
-            color_speed: src.4,
-            function: FunctionSource(src.1, src.2).into()
-        }
+impl TryFrom<FunctionEntrySource> for FunctionEntry {
+    type Error = FunctionEntryError;
+
+    fn try_from(src: FunctionEntrySource) -> Result<Self, Self::Error> {
+        FunctionEntry::new(FunctionSource(src.1, src.2).into(), src.0, src.3, src.4)
     }
 }
 

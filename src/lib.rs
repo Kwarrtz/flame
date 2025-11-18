@@ -39,27 +39,32 @@ pub struct Flame {
 
 impl Flame {
     pub fn run(&self, cfg: RunConfig) -> Buffer<u32> {
+        if cfg.threads == 1 {
+            return self.run_single(cfg.width, cfg.height, cfg.iters);
+        }
+
         thread::scope(|s| {
             let mut handles = Vec::new();
 
             for _ in 0 .. cfg.threads {
-                handles.push(s.spawn(|| self.run_single(cfg)));
+                handles.push(s.spawn(||
+                    self.run_single(cfg.width, cfg.height, cfg.iters / cfg.threads)));
             }
 
             Buffer::combine(handles.into_iter().map(|h| h.join().unwrap()))
         })
     }
 
-    fn run_single(&self, cfg: RunConfig) -> Buffer<u32> {
-        let mut buffer: Buffer<u32> = Buffer::new(cfg.width, cfg.height);
-        let trans = self.screen_transform(cfg.width, cfg.height);
+    fn run_single(&self, width: usize, height: usize, iters: usize) -> Buffer<u32> {
+        let mut buffer: Buffer<u32> = Buffer::new(width, height);
+        let trans = self.screen_transform(width, height);
 
         let mut rng = thread_rng();
 
-        let mut point = Point2::new(rng.gen(), rng.gen());
-        let mut c: f32 = rng.gen();
+        let mut point = Point2::new(rng.r#gen(), rng.r#gen());
+        let mut c: f32 = rng.r#gen();
 
-        for i in 0 .. (cfg.iters / cfg.threads) {
+        for i in 0 .. iters {
             let entry = self.rand_entry(&mut rng);
 
             point = entry.function.eval(point);
@@ -82,7 +87,8 @@ impl Flame {
     }
 
     fn rand_entry(&self, rng: &mut impl Rng) -> &FunctionEntry {
-        let r = Uniform::new(0.0, 1.0).sample(rng);
+        let total: f32 = self.functions.iter().map(|f| f.weight).sum();
+        let r = Uniform::new(0.0, total).sample(rng);
         let mut x = 0.0;
         for f in &self.functions {
             x += f.weight;
@@ -111,6 +117,28 @@ pub struct FunctionEntry {
     pub weight: f32,
     pub color: f32,
     pub color_speed: f32,
+}
+
+impl FunctionEntry {
+    fn new(
+        function: Function,
+        weight: f32, color: f32, color_speed: f32
+    ) -> Result<FunctionEntry, FunctionEntryError> {
+        if color > 1.0 || color < 0.0 {
+            return Err(FunctionEntryError::Color)
+        }
+
+        if color_speed > 1.0 || color_speed < 0.0 {
+            return Err(FunctionEntryError::ColorSpeed)
+        }
+
+        Ok(FunctionEntry {
+            weight: weight,
+            color: color,
+            color_speed: color_speed,
+            function: function
+        })
+    }
 }
 
 #[derive(Clone)]

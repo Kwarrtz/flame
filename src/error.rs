@@ -1,6 +1,14 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+pub enum FunctionEntryError {
+    #[error("color speed must be between 0 and 1")]
+    ColorSpeed,
+    #[error("color must be between 0 and 1")]
+    Color
+}
+
+#[derive(Error, Debug)]
 pub enum PaletteError {
     #[error("at least one key out of bounds (must be strictly between 0 and 1)")]
     OutOfBounds,
@@ -24,4 +32,6 @@ pub enum FlameError {
     ImageSaveError(#[from] image::ImageError),
     #[error("invalid color palette keys, {0}")]
     PaletteError(#[from] PaletteError),
+    #[error("invalid function specification, {0}")]
+    FunctionEntryError(#[from] FunctionEntryError)
 }

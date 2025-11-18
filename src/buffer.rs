@@ -60,11 +60,11 @@ impl<'a, T> Iterator for BucketIterMut<'a, T> {
 }
 
 impl<T> Bucket<T> {
-    pub fn iter_rgb(&self) -> BucketIter<T> {
+    pub fn iter_rgb<'a>(&'a self) -> BucketIter<'a, T> {
         BucketIter { bucket: self, i: 1 }
     }
 
-    pub fn iter_rgb_mut(&mut self) -> BucketIterMut<T> {
+    pub fn iter_rgb_mut<'a>(&'a mut self) -> BucketIterMut<'a, T> {
         // BucketIterMut { bucket: self, i: 1 }
         BucketIterMut {
             alpha: None,
@@ -74,11 +74,11 @@ impl<T> Bucket<T> {
         }
     }
 
-    pub fn iter_argb(&self) -> BucketIter<T> {
+    pub fn iter_argb<'a>(&'a self) -> BucketIter<'a, T> {
         BucketIter { bucket: self, i: 0 }
     }
 
-    pub fn iter_argb_mut(&mut self) -> BucketIterMut<T> {
+    pub fn iter_argb_mut<'a>(&'a mut self) -> BucketIterMut<'a, T> {
         // BucketIterMut { bucket: self, i: 0 }
         BucketIterMut {
             alpha: Some(&mut self.alpha),
