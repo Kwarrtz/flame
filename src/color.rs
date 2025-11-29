@@ -1,6 +1,6 @@
 use super::error::PaletteError;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     pub red: u8,
     pub green: u8,
@@ -16,6 +16,8 @@ impl Color {
         Color { red, green, blue }
     }
 
+    pub const WHITE: Color = Color { red: 255, green: 255, blue: 255 };
+
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
         Color {
             red: lerp(start.red, end.red, t),
@@ -25,7 +27,13 @@ impl Color {
     }
 }
 
-#[derive(Clone)]
+impl Default for Color {
+    fn default() -> Color {
+        Color::WHITE
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Palette {
     keys: Vec<f32>,
     colors: Vec<Color>
@@ -75,10 +83,19 @@ impl Palette {
             Some(j) => j + 1
         };
         // println!("{}", i);
-        let kbefore = self.keys.get(i - 1).unwrap_or(&0.0);
+        let kbefore = self.keys.get(i.wrapping_sub(1)).unwrap_or(&0.0);
         let kafter = self.keys.get(i).unwrap_or(&1.0);
         let t = (c - kbefore) / (kafter - kbefore);
 
         Some(Color::lerp(self.colors[i], self.colors[i+1], t))
+    }
+}
+
+impl Default for Palette {
+    fn default() -> Palette {
+        Palette {
+            keys: vec![],
+            colors: vec![Color::WHITE, Color::WHITE]
+        }
     }
 }

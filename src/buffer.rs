@@ -132,7 +132,7 @@ impl<T: AddAssign + Copy> AddAssign for Bucket<T> {
     }
 }
 
-impl<T: Float> Bucket<T> {
+impl<T: Float + Copy> Bucket<T> {
     pub fn max(self, other: Self) -> Self {
         Bucket::from_argb(
             self.iter_argb()
@@ -145,9 +145,9 @@ impl<T: Float> Bucket<T> {
 
 #[derive(Debug, Clone)]
 pub struct Buffer<T> {
-    pub(super) width: usize,
-    pub(super) height: usize,
-    pub(super) buckets: Vec<Bucket<T>>,
+    pub width: usize,
+    pub height: usize,
+    pub buckets: Vec<Bucket<T>>,
 }
 
 impl<T: Copy> Buffer<T> {

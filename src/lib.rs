@@ -1,5 +1,5 @@
 use nalgebra::{Affine2, Point2, Transform, Matrix3 };
-use rand::distributions::Uniform;
+use rand::distr::Uniform;
 use rand::prelude::*;
 use std::thread;
 
@@ -7,7 +7,7 @@ mod variation;
 pub use variation::*;
 
 mod buffer;
-use buffer::*;
+pub use buffer::*;
 
 mod color;
 pub use color::*;
@@ -21,7 +21,7 @@ pub use file::*;
 mod render;
 pub use render::*;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct RunConfig {
     pub width: usize,
     pub height: usize,
@@ -29,7 +29,7 @@ pub struct RunConfig {
     pub threads: usize,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Flame {
     pub functions: Vec<FunctionEntry>,
     pub last: Function,
@@ -40,7 +40,7 @@ pub struct Flame {
 impl Flame {
     pub fn run(&self, cfg: RunConfig) -> Buffer<u32> {
         if cfg.threads == 1 {
-            return self.run_single(cfg.width, cfg.height, cfg.iters);
+            return self.run_single_thread(cfg.width, cfg.height, cfg.iters);
         }
 
         thread::scope(|s| {
@@ -48,24 +48,32 @@ impl Flame {
 
             for _ in 0 .. cfg.threads {
                 handles.push(s.spawn(||
-                    self.run_single(cfg.width, cfg.height, cfg.iters / cfg.threads)));
+                    self.run_single_thread(cfg.width, cfg.height, cfg.iters / cfg.threads)));
             }
 
             Buffer::combine(handles.into_iter().map(|h| h.join().unwrap()))
         })
     }
 
-    fn run_single(&self, width: usize, height: usize, iters: usize) -> Buffer<u32> {
+    fn run_single_thread(&self, width: usize, height: usize, iters: usize) -> Buffer<u32> {
         let mut buffer: Buffer<u32> = Buffer::new(width, height);
-        let trans = self.screen_transform(width, height);
+        let mut rng = rand::rng();
+        self.run_partial(&mut buffer, iters, &mut rng);
+        buffer
+    }
 
-        let mut rng = thread_rng();
+    pub fn run_partial(&self, buffer: &mut Buffer<u32>, iters: usize, rng: &mut impl Rng) {
+        if self.functions.is_empty() {
+            return;
+        }
 
-        let mut point = Point2::new(rng.r#gen(), rng.r#gen());
-        let mut c: f32 = rng.r#gen();
+        let trans = self.screen_transform(buffer.width, buffer.height);
+
+        let mut point = Point2::new(rng.random(), rng.random());
+        let mut c: f32 = rng.random();
 
         for i in 0 .. iters {
-            let entry = self.rand_entry(&mut rng);
+            let entry = self.rand_entry(rng);
 
             point = entry.function.eval(point);
             point = self.last.eval(point);
@@ -82,13 +90,11 @@ impl Flame {
                 bucket.blue += color.blue as u32;
             }
         }
-
-        buffer
     }
 
     fn rand_entry(&self, rng: &mut impl Rng) -> &FunctionEntry {
         let total: f32 = self.functions.iter().map(|f| f.weight).sum();
-        let r = Uniform::new(0.0, total).sample(rng);
+        let r = Uniform::new(0.0, total).unwrap().sample(rng);
         let mut x = 0.0;
         for f in &self.functions {
             x += f.weight;
@@ -111,7 +117,7 @@ impl Flame {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct FunctionEntry {
     pub function: Function,
     pub weight: f32,
@@ -141,7 +147,7 @@ impl FunctionEntry {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub var: Variation,
     pub trans: Affine2<f32>,
@@ -153,7 +159,16 @@ impl Function {
     }
 }
 
-#[derive(Clone, Copy)]
+impl Default for Function {
+    fn default() -> Function {
+        Function {
+            var: Variation::Id,
+            trans: Affine2::identity()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bounds {
     x_min: f32,
     x_max: f32,
@@ -178,5 +193,14 @@ impl Bounds {
 
     pub fn height(&self) -> f32 {
         self.y_max - self.y_min
+    }
+}
+
+impl Default for Bounds {
+    fn default() -> Bounds {
+        Bounds {
+            x_min: -1., x_max: 1.,
+            y_min: -1., y_max: 1.
+        }
     }
 }

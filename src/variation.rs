@@ -4,7 +4,7 @@ use nalgebra::Point2;
 use std::f32::consts::PI;
 const PII: f32 = 1.0 / PI;
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub enum Variation {
     Id,
     Sinusoidal,
