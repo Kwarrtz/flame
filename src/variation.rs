@@ -1,10 +1,10 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use nalgebra::Point2;
 
 use std::f32::consts::PI;
 const PII: f32 = 1.0 / PI;
 
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Variation {
     Id,
     Sinusoidal,

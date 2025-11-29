@@ -24,6 +24,8 @@ pub enum FlameError {
     JsonError(#[from] serde_json::Error),
     #[error("could not parse flame file\n{0}")]
     RonError(#[from] ron::error::SpannedError),
+    #[error("could not parse flame file\n{0}")]
+    YamlError(#[from] serde_yaml::Error),
     #[error("failed to read input file\n{0}")]
     FileReadError(#[from] std::io::Error),
     #[error("input file does not have valid extension (must be .json or .ron)")]

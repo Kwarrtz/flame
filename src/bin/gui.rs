@@ -1,5 +1,4 @@
-use flame::{Buffer, Flame, FlameSource, RenderConfig};
-use ::image::RgbaImage;
+use flame::{Buffer, Flame, RenderConfig};
 use ribir::prelude::*;
 use async_channel::{self, Receiver, Sender};
 use std::{borrow::Cow, thread};
@@ -12,14 +11,8 @@ fn generate_flame(rx_flame: Receiver<Flame>, tx_image: Sender<PixelImage>) {
     let mut rng = rand::rng();
     let mut flame = rx_flame.recv_blocking().unwrap();
 
-    let mut time_marker;
-    let mut duration;
-
     loop {
-        time_marker = std::time::Instant::now();
         flame.run_partial(&mut buffer, 1_000_000, &mut rng);
-        // duration = time_marker.elapsed();
-        // println!("Game run: {}.{}", duration.as_secs(), duration.subsec_millis());
 
         let img_buffer: Buffer<u8> = buffer.render(RenderConfig {
             gamma: 1.0,
@@ -28,7 +21,6 @@ fn generate_flame(rx_flame: Receiver<Flame>, tx_image: Sender<PixelImage>) {
             height: IMG_HEIGHT,
             filter_radius: 0
         });
-        // time_marker = std::time::Instant::now();
         let mut raw_image = vec![255u8; IMG_WIDTH * IMG_HEIGHT * 4];
         for (i, &bucket) in img_buffer.buckets.iter().enumerate() {
             raw_image[4 * i] = bucket.red;
@@ -40,16 +32,12 @@ fn generate_flame(rx_flame: Receiver<Flame>, tx_image: Sender<PixelImage>) {
             IMG_WIDTH as u32, IMG_HEIGHT as u32,
             image::ColorFormat::Rgba8
         );
-        // duration = time_marker.elapsed();
-        // println!("Rendered: {}.{}", duration.as_secs(), duration.subsec_millis());
         tx_image.force_send(ribir_image).unwrap();
 
         if let Ok(new_flame) = rx_flame.try_recv() {
             flame = new_flame;
             buffer = Buffer::new(IMG_WIDTH, IMG_HEIGHT);
         }
-        duration = time_marker.elapsed();
-        println!("Loop: {}.{:03}", duration.as_secs(), duration.subsec_millis());
     }
 }
 
@@ -120,9 +108,9 @@ fn main() {
                     border: Border::all(BorderSide::new(1.0, Brush::Color(Color::BLACK))),
                     border_radius: Radius::all(3.0),
                     on_chars: move |_| {
-                        *$flame.write() = FlameSource::from_ron(
+                        *$flame.write() = Flame::from_yaml(
                             &$flame_input.text()
-                        ).ok().and_then(|source| source.try_into().ok());
+                        ).ok();
                     }
                 }
             }

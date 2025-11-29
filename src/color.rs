@@ -1,6 +1,10 @@
-use super::error::PaletteError;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use super::error::PaletteError;
+// use super::file::RgbSource;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from="self::_serde::RgbSource", into="self::_serde::RgbSource")]
 pub struct Color {
     pub red: u8,
     pub green: u8,
@@ -33,7 +37,8 @@ impl Default for Color {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from="self::_serde::PaletteSource", into="self::_serde::PaletteSource")]
 pub struct Palette {
     keys: Vec<f32>,
     colors: Vec<Color>
@@ -96,6 +101,48 @@ impl Default for Palette {
         Palette {
             keys: vec![],
             colors: vec![Color::WHITE, Color::WHITE]
+        }
+    }
+}
+
+mod _serde {
+    use super::*;
+
+    #[derive(Serialize, Deserialize)]
+    pub struct PaletteSource {
+        colors: Vec<Color>,
+        keys: Option<Vec<f32>>
+    }
+
+    impl TryFrom<PaletteSource> for Palette {
+        type Error = PaletteError;
+
+        fn try_from(src: PaletteSource) -> Result<Palette, PaletteError> {
+            Palette::new(src.colors, src.keys)
+        }
+    }
+
+    impl From<Palette> for PaletteSource {
+        fn from(palette: Palette) -> PaletteSource {
+            PaletteSource {
+                colors: palette.colors,
+                keys: Some(palette.keys)
+            }
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct RgbSource(u8, u8, u8);
+
+    impl From<RgbSource> for Color {
+        fn from(src: RgbSource) -> Color {
+            Color::rgb(src.0, src.1, src.2)
+        }
+    }
+
+    impl From<Color> for RgbSource {
+        fn from(color: Color) -> RgbSource {
+            RgbSource(color.red, color.green, color.blue)
         }
     }
 }

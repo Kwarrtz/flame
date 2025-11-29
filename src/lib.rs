@@ -1,7 +1,8 @@
 use nalgebra::{Affine2, Point2, Transform, Matrix3 };
 use rand::distr::Uniform;
 use rand::prelude::*;
-use std::thread;
+use std::{path::Path, thread};
+use serde::{Serialize, Deserialize};
 
 mod variation;
 pub use variation::*;
@@ -15,9 +16,6 @@ pub use color::*;
 mod error;
 pub use error::*;
 
-mod file;
-pub use file::*;
-
 mod render;
 pub use render::*;
 
@@ -29,9 +27,10 @@ pub struct RunConfig {
     pub threads: usize,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Flame {
     pub functions: Vec<FunctionEntry>,
+    #[serde(default)]
     pub last: Function,
     pub palette: Palette,
     pub bounds: Bounds,
@@ -115,9 +114,32 @@ impl Flame {
             0., 0., 1.
         ))
     }
+
+    pub fn from_json(src: &str) -> serde_json::Result<Flame> {
+        serde_json::from_str(src)
+    }
+
+    pub fn from_ron(src: &str) -> ron::error::SpannedResult<Flame> {
+        ron::from_str(src)
+    }
+
+    pub fn from_yaml(src: &str) -> Result<Flame, serde_yaml::Error> {
+        serde_yaml::from_str(src)
+    }
+
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Flame, FlameError> {
+        let contents = std::fs::read_to_string(path.as_ref())?;
+        Ok(match path.as_ref().extension().ok_or(FlameError::ExtensionError)?.to_str() {
+            Some("json") => Flame::from_json(&contents)?,
+            Some("ron") => Flame::from_ron(&contents)?,
+            Some("yaml") => Flame::from_yaml(&contents)?,
+            _ => return Err(FlameError::ExtensionError)
+        })
+    }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(try_from="self::_serde::FunctionEntrySource", into="self::_serde::FunctionEntrySource")]
 pub struct FunctionEntry {
     pub function: Function,
     pub weight: f32,
@@ -147,7 +169,8 @@ impl FunctionEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from="self::_serde::FunctionSource", into="self::_serde::FunctionSource")]
 pub struct Function {
     pub var: Variation,
     pub trans: Affine2<f32>,
@@ -168,7 +191,7 @@ impl Default for Function {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Bounds {
     x_min: f32,
     x_max: f32,
@@ -201,6 +224,79 @@ impl Default for Bounds {
         Bounds {
             x_min: -1., x_max: 1.,
             y_min: -1., y_max: 1.
+        }
+    }
+}
+
+mod _serde {
+    use super::*;
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename="Function")]
+    pub struct FunctionSource {
+        variation: Variation,
+        affine: [f32; 6]
+    }
+
+    impl From<FunctionSource> for Function {
+        fn from(src: FunctionSource) -> Function {
+            let t = Transform::from_matrix_unchecked(Matrix3::new(
+                src.affine[0], src.affine[1], src.affine[4],
+                src.affine[2], src.affine[3], src.affine[5],
+                0.0,       0.0,       1.0,
+            ));
+
+            Function {
+                var: src.variation,
+                trans: t,
+            }
+        }
+    }
+
+    impl From<Function> for FunctionSource {
+        fn from(func: Function) -> Self {
+            let mat = func.trans.matrix();
+            FunctionSource {
+                variation: func.var,
+                affine: [
+                    mat.m11, mat.m12, mat.m21, mat.m22,
+                    mat.m13, mat.m23
+                ]
+            }
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename="FunctionEntry")]
+    pub struct FunctionEntrySource {
+        weight: f32,
+        #[serde(flatten)]
+        function: Function,
+        color: f32,
+        color_speed: Option<f32>
+    }
+
+    impl TryFrom<FunctionEntrySource> for FunctionEntry {
+        type Error = FunctionEntryError;
+
+        fn try_from(src: FunctionEntrySource) -> Result<Self, Self::Error> {
+            FunctionEntry::new(
+                src.function.into(),
+                src.weight,
+                src.color,
+                src.color_speed.unwrap_or(0.5)
+            )
+        }
+    }
+
+    impl From<FunctionEntry> for FunctionEntrySource {
+        fn from(entry: FunctionEntry) -> Self {
+            FunctionEntrySource {
+                weight: entry.weight,
+                function: entry.function,
+                color: entry.color,
+                color_speed: Some(entry.color_speed)
+            }
         }
     }
 }

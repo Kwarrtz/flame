@@ -67,7 +67,7 @@ fn run() -> Result<(), FlameError> {
     let run_cfg = cli.run_config();
     let render_cfg = cli.render_config();
 
-    let flame: Flame = FlameSource::from_file(cli.input)?.try_into()?;
+    let flame: Flame = Flame::from_file(cli.input)?;
 
     println!("Rendering flame...");
 
