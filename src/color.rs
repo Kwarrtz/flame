@@ -132,6 +132,7 @@ mod _serde {
     }
 
     #[derive(Serialize, Deserialize)]
+    #[serde(rename="Rgb")]
     pub struct RgbSource(u8, u8, u8);
 
     impl From<RgbSource> for Color {

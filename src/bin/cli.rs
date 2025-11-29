@@ -20,25 +20,25 @@ struct Cli {
     #[arg(short, long, default_value_t = 10)]
     threads: usize,
     /// Dimensions (in pixels) of the output image.
-    #[arg(short, long, number_of_values = 2, default_values_t = [500, 500])]
+    #[arg(short, long, number_of_values = 2, default_values_t = [1000, 1000])]
     #[arg(value_names = ["WIDTH", "HEIGHT"])]
     dims: Vec<usize>,
     /// Gamma correction factor.
-    #[arg(short, long, default_value_t = 2.2)]
+    #[arg(short, long, default_value_t = 1.0)]
     gamma: f64,
     /// Gamma color vibrancy (between 0 and 1).
     ///
     /// When this value is zero, gamma correction is applied independently to each color channel,
     /// which can lead to washed out colors. When it is one, gamma correction only affects luminance.
     /// Values between 0 and 1 interpolate geometrically between these extremes.
-    #[arg(short, long, default_value_t = 0.0)]
+    #[arg(short, long, default_value_t = 0.5)]
     vibrancy: f64,
     /// Output a grayscale image, ignoring any specified color information.
     #[arg(short='G', long)]
     grayscale: bool,
-    /// Super-sampling radius.
-    #[arg(short, long, default_value_t = 0)]
-    samples: usize,
+    // /// Super-sampling radius.
+    // #[arg(short, long, default_value_t = 0)]
+    // samples: usize,
 }
 
 impl Cli {
@@ -56,8 +56,7 @@ impl Cli {
             width: self.dims[0],
             height: self.dims[1],
             gamma: self.gamma,
-            vibrancy: self.vibrancy,
-            filter_radius: self.samples
+            vibrancy: self.vibrancy
         }
     }
 }

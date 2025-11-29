@@ -10,7 +10,6 @@ pub struct RenderConfig {
     pub vibrancy: f64,
     pub width: usize,
     pub height: usize,
-    pub filter_radius: usize,
 }
 
 impl<T: ToPrimitive + Clone> Buffer<T> {
@@ -19,7 +18,6 @@ impl<T: ToPrimitive + Clone> Buffer<T> {
         buffer.log_density();
         buffer.normalize();
         buffer.gamma(cfg.gamma, cfg.vibrancy);
-        // buffer = buffer.filter(cfg.width, cfg.height, cfg.filter_radius);
         buffer.clamp();
         buffer.scale_convert()
     }
@@ -46,28 +44,6 @@ impl<T: Float + NumAssign + Copy> Buffer<T> {
             }
         }
     }
-
-    // pub fn filter(&self, width: usize, height: usize, radius: usize) -> Buffer<T> {
-        // let s = 1 + 2 * samples;
-        // let width = self.width / s;
-        // let height = self.height / s;
-
-        // let mut buffer = Buffer::new(width, height);
-
-        // for y in 0..height {
-        //     for x in 0..width {
-        //         let b = buffer.get_mut(x, y);
-        //         for yi in 0..s {
-        //             for xi in 0..s {
-        //                 *b += self.get(s * x + xi, s * y + yi);
-        //             }
-        //         }
-        //         *b *= T::from(s.pow(2)).unwrap().recip();
-        //     }
-        // }
-
-        // buffer
-    // }
 
     pub fn normalize(&mut self) {
         let max = self.buckets.iter().cloned().reduce(Bucket::max).unwrap();

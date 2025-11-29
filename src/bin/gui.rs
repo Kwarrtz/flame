@@ -18,8 +18,7 @@ fn generate_flame(rx_flame: Receiver<Flame>, tx_image: Sender<PixelImage>) {
             gamma: 1.0,
             vibrancy: 0.0,
             width: IMG_WIDTH,
-            height: IMG_HEIGHT,
-            filter_radius: 0
+            height: IMG_HEIGHT
         });
         let mut raw_image = vec![255u8; IMG_WIDTH * IMG_HEIGHT * 4];
         for (i, &bucket) in img_buffer.buckets.iter().enumerate() {
