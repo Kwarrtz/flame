@@ -1,6 +1,5 @@
 use std::ops::{AddAssign, MulAssign};
 
-
 use nalgebra::Point2;
 use num_traits::{zero, Float, NumAssign, NumCast, ToPrimitive, Zero};
 
