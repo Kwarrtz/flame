@@ -66,17 +66,17 @@ impl Flame {
         let mut point = Point2::<f32>::new(rng.random(), rng.random());
         let mut c: f32 = rng.random();
 
-        for i in 0 .. iters {
-            let num_cases: u8 =
-                if self.symmetry == 0
-                || self.symmetry == 1 {
-                    1
-                } else if self.symmetry > 1 {
-                    2
-                } else {
-                    3
-                };
+        let num_cases: u8 =
+            if self.symmetry == 0
+            || self.symmetry == 1 {
+                1
+            } else if self.symmetry > 1 {
+                2
+            } else {
+                3
+            };
 
+        for i in 0 .. iters {
             match rng.random_range(0..num_cases) {
                 0 => {
                     let entry = self.rand_entry(rng);

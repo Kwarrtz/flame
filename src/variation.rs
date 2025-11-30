@@ -31,7 +31,7 @@ pub enum Variation {
     Bubble, // r2
     Cross,
     Blob(f32, f32, f32), // theta
-    PDJ(f32, f32, f32, f32),
+    Pdj(f32, f32, f32, f32),
     Fan2(f32, f32), // theta
     Rings2(f32), // theta
     Perspective(f32, f32),
@@ -174,7 +174,7 @@ impl Variation {
                 let a = r() * (l + (h - l) / 2.0 * (1.0 + (theta() * w).sin()));
                 (a * y, a * x)
             }
-            PDJ(a, b, c, d) => ((a * y).sin() - (b * x).cos(), (c * x).sin() - (d * y).cos()),
+            Pdj(a, b, c, d) => ((a * y).sin() - (b * x).cos(), (c * x).sin() - (d * y).cos()),
             Fan2(a, b) => {
                 let p1 = PI * a * a;
                 let t = theta() + b - p1 * (2. * theta() * b / p1).trunc();
