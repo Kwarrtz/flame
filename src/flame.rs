@@ -1,4 +1,4 @@
-use nalgebra::{Affine2, Matrix3, Point2, Rotation2, Transform};
+use nalgebra::{Point2, Rotation2};
 use rand::distr::Uniform;
 use rand::prelude::*;
 use std::{f32::consts::TAU, path::Path, thread};
@@ -61,7 +61,7 @@ impl Flame {
             return;
         }
 
-        let trans = self.screen_transform(buffer.width, buffer.height);
+        let trans = self.bounds.screen_transform(buffer.width, buffer.height);
 
         let mut point = Point2::<f32>::new(rng.random(), rng.random());
         let mut c: f32 = rng.random();
@@ -121,16 +121,6 @@ impl Flame {
         }
 
         &self.functions.iter().last().unwrap()
-    }
-
-    fn screen_transform(&self, width: usize, height: usize) -> Affine2<f32> {
-        let w_scale = (width - 1) as f32 / self.bounds.width();
-        let h_scale =  (height - 1) as f32 / self.bounds.height();
-        Transform::from_matrix_unchecked(Matrix3::new(
-            w_scale, 0., -self.bounds.x_min * w_scale,
-            0., -h_scale, self.bounds.y_max * h_scale,
-            0., 0., 1.
-        ))
     }
 
     pub fn from_json(src: &str) -> serde_json::Result<Flame> {

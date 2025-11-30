@@ -2,7 +2,7 @@ use image::{DynamicImage, GrayImage, ImageBuffer, RgbImage};
 use num_traits::{clamp, one, zero, Bounded, Float, Num, NumAssign, NumCast, ToPrimitive};
 
 use super::buffer::*;
-// mod buffer;
+use super::bucket::*;
 
 #[derive(Clone, Copy)]
 pub struct RenderConfig {

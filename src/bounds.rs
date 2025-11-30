@@ -1,5 +1,5 @@
 use serde::{Serialize,Deserialize};
-use nalgebra::{Point2};
+use nalgebra::{Affine2, Matrix3, Point2, Transform};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Bounds {
@@ -26,6 +26,16 @@ impl Bounds {
 
     pub fn height(&self) -> f32 {
         self.y_max - self.y_min
+    }
+
+    pub fn screen_transform(&self, width: usize, height: usize) -> Affine2<f32> {
+        let w_scale = (width - 1) as f32 / self.width();
+        let h_scale =  (height - 1) as f32 / self.height();
+        Transform::from_matrix_unchecked(Matrix3::new(
+            w_scale, 0., -self.x_min * w_scale,
+            0., -h_scale, self.y_max * h_scale,
+            0., 0., 1.
+        ))
     }
 }
 
