@@ -1,4 +1,5 @@
 use nalgebra::{Affine2, Point2, Transform, Matrix3};
+use rand::Rng;
 use serde::{Serialize, Deserialize};
 
 use super::{
@@ -37,7 +38,7 @@ impl FunctionEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(from="self::_serde::FunctionSource", into="self::_serde::FunctionSource")]
 pub struct Function {
     pub var: Variation,
@@ -45,27 +46,24 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn eval(&self, arg: Point2<f32>) -> Point2<f32> {
-        self.var.eval(self.trans * arg)
-    }
-}
-
-impl Default for Function {
-    fn default() -> Function {
-        Function {
-            var: Variation::Id,
-            trans: Affine2::identity()
-        }
+    pub fn eval(&self, rng: &mut impl Rng, arg: Point2<f32>) -> Point2<f32> {
+        self.var.eval(rng, self.trans * arg)
     }
 }
 
 mod _serde {
     use super::*;
 
+    const fn default_affine() -> [f32; 6] {
+        [1., 0., 0., 1., 0., 0.]
+    }
+
     #[derive(Serialize, Deserialize)]
     #[serde(rename="Function")]
     pub struct FunctionSource {
+        #[serde(default)]
         variation: Variation,
+        #[serde(default="default_affine")]
         affine: [f32; 6]
     }
 

@@ -1,7 +1,7 @@
-use nalgebra::{Affine2, Point2, Transform, Matrix3};
+use nalgebra::{Affine2, Matrix3, Point2, Rotation2, Transform};
 use rand::distr::Uniform;
 use rand::prelude::*;
-use std::{path::Path, thread};
+use std::{f32::consts::TAU, path::Path, thread};
 use serde::{Serialize, Deserialize};
 
 use super::{
@@ -25,6 +25,8 @@ pub struct Flame {
     pub functions: Vec<FunctionEntry>,
     #[serde(default)]
     pub last: Function,
+    #[serde(default)]
+    pub symmetry: i8,
     pub palette: Palette,
     pub bounds: Bounds,
 }
@@ -61,16 +63,39 @@ impl Flame {
 
         let trans = self.screen_transform(buffer.width, buffer.height);
 
-        let mut point = Point2::new(rng.random(), rng.random());
+        let mut point = Point2::<f32>::new(rng.random(), rng.random());
         let mut c: f32 = rng.random();
 
         for i in 0 .. iters {
-            let entry = self.rand_entry(rng);
+            let num_cases: u8 =
+                if self.symmetry == 0
+                || self.symmetry == 1 {
+                    1
+                } else if self.symmetry > 1 {
+                    2
+                } else {
+                    3
+                };
 
-            point = entry.function.eval(point);
-            point = self.last.eval(point);
-            c *= 1.0 - entry.color_speed;
-            c += entry.color * entry.color_speed;
+            match rng.random_range(0..num_cases) {
+                0 => {
+                    let entry = self.rand_entry(rng);
+                    point = entry.function.eval(rng, point);
+                    point = self.last.eval(rng, point);
+                    c *= 1.0 - entry.color_speed;
+                    c += entry.color * entry.color_speed;
+                }
+                1 => {
+                    let rot_degree = self.symmetry.abs();
+                    let times = rng.random_range(0..rot_degree);
+                    let rot = Rotation2::new(TAU * times as f32 / rot_degree as f32);
+                    point = rot * point;
+                }
+                2 => {
+                    point[0] = -point[0];
+                }
+                _ => unreachable!()
+            }
 
             if i > 20 && self.bounds.contains(&point) {
                 let screen_point = trans * point;
