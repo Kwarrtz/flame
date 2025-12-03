@@ -8,14 +8,15 @@ use super::bucket::*;
 pub struct RenderConfig {
     pub gamma: f64,
     pub vibrancy: f64,
+    pub brightness: f64,
     pub width: usize,
     pub height: usize,
 }
 
 impl<T: ToPrimitive + Clone> Buffer<T> {
-    pub fn render<S: Bounded + Num + NumCast>(&self, cfg: RenderConfig) -> Buffer<S> {
+    pub fn render<S: Bounded + Num + NumCast>(&self, cfg: RenderConfig, iters: usize) -> Buffer<S> {
         let mut buffer = self.clone().convert::<f64>();
-        buffer.log_density();
+        buffer.log_density(cfg.brightness, iters as f64);
         buffer.normalize();
         buffer.gamma(cfg.gamma, cfg.vibrancy);
         buffer.clamp();
@@ -24,10 +25,12 @@ impl<T: ToPrimitive + Clone> Buffer<T> {
 }
 
 impl<T: Float + NumAssign + Copy> Buffer<T> {
-    pub fn log_density(&mut self) {
+    pub fn log_density(&mut self, brightness: T, iters: T) {
         for bucket in self.buckets.iter_mut() {
             if bucket.alpha.is_normal() {
-                let s = bucket.alpha.ln() / bucket.alpha;
+                let new_alpha = bucket.alpha.ln() - iters.ln() + brightness;
+                let new_alpha = T::max(T::zero(), new_alpha);
+                let s = new_alpha / bucket.alpha;
                 *bucket *= s;
             }
         }

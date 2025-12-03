@@ -5,6 +5,7 @@ use std::{borrow::Cow, thread};
 
 const IMG_WIDTH: usize = 1_000;
 const IMG_HEIGHT: usize = 1_000;
+const ITERS_PER_LOOP: usize = 1_000_000;
 
 fn generate_flame(
     rx_flame: Receiver<Flame>,
@@ -14,16 +15,19 @@ fn generate_flame(
     let mut buffer: Buffer<u32> = Buffer::new(IMG_WIDTH, IMG_HEIGHT);
     let mut rng = rand::rng();
     let mut flame = rx_flame.recv_blocking().unwrap();
+    let mut iters = 0;
 
     loop {
-        flame.run_partial(&mut buffer, 1_000_000, &mut rng);
+        flame.run_partial(&mut buffer, ITERS_PER_LOOP, &mut rng);
+        iters += ITERS_PER_LOOP;
 
         let img_buffer: Buffer<u8> = buffer.render(RenderConfig {
             gamma: 1.0,
             vibrancy: 0.0,
             width: IMG_WIDTH,
-            height: IMG_HEIGHT
-        });
+            height: IMG_HEIGHT,
+            brightness: 20.
+        }, iters);
         let mut raw_image = vec![255u8; IMG_WIDTH * IMG_HEIGHT * 4];
         for (i, &bucket) in img_buffer.buckets.iter().enumerate() {
             raw_image[4 * i] = bucket.red;
@@ -41,6 +45,7 @@ fn generate_flame(
         if let Ok(new_flame) = rx_flame.try_recv() {
             flame = new_flame;
             buffer = Buffer::new(IMG_WIDTH, IMG_HEIGHT);
+            iters = 0;
         }
     }
 }
