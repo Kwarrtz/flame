@@ -4,6 +4,9 @@ use nalgebra::Point2;
 
 use std::f32::consts::{PI, FRAC_1_PI, TAU};
 
+use flame_macro::variation;
+
+#[variation]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Variation {
     Id,
