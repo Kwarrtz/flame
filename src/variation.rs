@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::{seq::IndexedRandom, distr::Distribution, Rng};
 use serde::{Deserialize, Serialize};
 use nalgebra::Point2;
 
@@ -227,3 +227,15 @@ impl Default for Variation {
         Id
     }
 }
+
+// pub struct VariationDistribution<D: Distribution<f32>>(D);
+
+// impl<D: Distribution<f32> + Copy> Distribution<Variation> for VariationDistribution<D> {
+//     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Variation {
+//         let discr = VARIATION_DISCRIMINANTS.choose(rng).unwrap().clone();
+//         let params: Vec<_> = self.0.sample_iter(rng)
+//             .take(discr.num_parameters())
+//             .collect();
+//         Variation::build(discr, params).unwrap()
+//     }
+// }

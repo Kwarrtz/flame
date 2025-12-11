@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, ItemEnum};
+use syn::{parse_macro_input, Ident, ItemEnum};
 use quote::{quote, format_ident};
 
 #[proc_macro_attribute]
@@ -15,26 +15,30 @@ pub fn variation(_argument: TokenStream, input: TokenStream) -> TokenStream {
     let variant_args: Vec<_> = input.variants.iter()
         .map(|v| v.fields.len())
         .collect();
+    let num_variants = variant_idents.len();
 
-    let head_variant_ident = &variant_idents[0];
-    let tail_variant_idents = &variant_idents[1..];
     let discr = quote! {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum #discr_ident {
-            #head_variant_ident = 0,
-            #( #tail_variant_idents ),*
+            #( #variant_idents ),*
         }
     };
 
-    let blank_fields = variant_args.iter()
-        .map(|&n| {
-            if n == 0 {
-                quote!()
-            } else {
-                let underscores = std::iter::repeat(quote!{_}).take(n);
-                quote! { (#(#underscores),*) }
-            }
-        });
+    macro_rules! fields {
+        ($f:expr) => {
+            variant_args.iter()
+                .map(|&n| {
+                    if n == 0 {
+                        quote! {}
+                    } else {
+                        let param = (0..n).map($f);
+                        quote! { (#(#param),*) }
+                    }
+                })
+        };
+    }
+
+    let blank_fields = fields!(|_| quote!{_});
     let from_impl = quote! {
         impl From<#ident> for #discr_ident {
             fn from(val: #ident) -> Self {
@@ -53,33 +57,62 @@ pub fn variation(_argument: TokenStream, input: TokenStream) -> TokenStream {
         }
     };
 
-    let build_fields = variant_args.iter()
-        .map(|&n| {
-            if n == 0 {
-                quote!()
-            } else {
-                let params = (0..n).map(|i| quote!(parameters[#i]));
-                quote! { (#(#params),*) }
-            }
-        });
+    // let build_fields = fields!(|i| quote! { parameters[#i] });
+    // let build = quote! {
+    //     pub fn build(discr: #discr_ident, parameters: impl ::std::iter::IntoIterator<Item=f32>) -> Option<Self> {
+    //         let parameters: Vec<_> = parameters.into_iter().collect();
+
+    //         if parameters.len() != discr.num_parameters() { return None; }
+
+    //         Some(match discr {
+    //             #(#discr_ident::#variant_idents => Self::#variant_idents #build_fields),*
+    //         })
+    //     }
+    // };
+
+    let build_fields = fields!(|_| quote! { parameters.next()? });
     let build = quote! {
         pub fn build(discr: #discr_ident, parameters: impl ::std::iter::IntoIterator<Item=f32>) -> Option<Self> {
-            let parameters: Vec<_> = parameters.into_iter().collect();
+            let mut parameters = parameters.into_iter();
 
-            if parameters.len() != discr.num_parameters() { return None; }
-
-            Some(match discr {
+            let var = match discr {
                 #(#discr_ident::#variant_idents => Self::#variant_idents #build_fields),*
-            })
+            };
+
+            match parameters.next() {
+                None => Some(var),
+                _ => None
+            }
         }
     };
+
+    let const_discrs_ident = Ident::new(&format!("{}_DISCRIMINANTS", ident.to_string().to_uppercase()), ident.span());
+    let const_discrs = quote! {
+        const #const_discrs_ident: [#discr_ident; #num_variants] = [#(#discr_ident::#variant_idents),*];
+    };
+
+    // let match_branches = (0..num_variants);
+    // let rand_impl = quote! {
+    //     impl ::rand::distr::Distribution<#discr_ident> for #discr_ident {
+    //         fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
+    //             match rng.random_range(0..#num_variants) {
+    //                 #( #match_branches => Self::#variant_idents ),*,
+    //                 _ => unreachable!()
+    //             }
+    //         }
+    //     }
+    // };
 
     quote! {
         #input
 
         #discr
 
+        #const_discrs
+
         #from_impl
+
+        // #rand_impl
 
         impl #ident {
             #build
@@ -87,6 +120,8 @@ pub fn variation(_argument: TokenStream, input: TokenStream) -> TokenStream {
 
         impl #discr_ident {
             #num_parameters
+
+
         }
     }.into()
 }
