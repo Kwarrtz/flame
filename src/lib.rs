@@ -1,26 +1,13 @@
-mod variation;
-pub use variation::*;
-
-mod buffer;
-pub use buffer::*;
-
-mod color;
-pub use color::*;
-
-mod error;
-pub use error::*;
-
-mod render;
-pub use render::*;
-
+pub mod variation;
+pub mod buffer;
+pub mod color;
+pub mod error;
+pub mod render;
+pub mod function;
+pub mod bounds;
+pub mod bucket;
 mod flame;
+
 pub use flame::*;
-
-mod function;
-pub use function::*;
-
-mod bounds;
-pub use bounds::*;
-
-mod bucket;
-pub use bucket::*;
+pub use render::RenderConfig;
+pub use error::FlameError;

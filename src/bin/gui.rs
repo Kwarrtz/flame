@@ -1,4 +1,4 @@
-use flame::{Buffer, Flame, RenderConfig};
+use flame::{Flame, RenderConfig, buffer::Buffer};
 use ribir::prelude::*;
 use async_channel::{self, Receiver, Sender};
 use std::{borrow::Cow, thread};

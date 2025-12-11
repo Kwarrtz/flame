@@ -1,4 +1,4 @@
-use rand::{seq::IndexedRandom, distr::Distribution, Rng};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use nalgebra::Point2;
 
@@ -52,6 +52,7 @@ struct RandVars<'a, R: Rng>(&'a mut R);
 impl<'a, R: Rng> RandVars<'a, R> {
     fn psi(&mut self) -> f32 { self.0.random() }
 
+    #[allow(unused)]
     fn omega(&mut self) -> f32 {
         (self.0.random::<bool>() as u8) as f32 * PI
     }
