@@ -41,14 +41,31 @@ impl FunctionEntry {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(from="self::_serde::FunctionSource", into="self::_serde::FunctionSource")]
 pub struct Function {
-    pub var: Variation,
-    pub trans: Affine2<f32>,
+    pub variation: Variation,
+    pub affine_pre: Affine2<f32>,
+    pub affine_post: Affine2<f32>
 }
 
 impl Function {
     pub fn eval(&self, rng: &mut impl Rng, arg: Point2<f32>) -> Point2<f32> {
-        self.var.eval(rng, self.trans * arg)
+        self.affine_post * self.variation.eval(rng, self.affine_pre * arg)
     }
+}
+
+fn affine_from_raw(raw: [f32; 6]) -> Affine2<f32> {
+    Transform::from_matrix_unchecked(Matrix3::new(
+        raw[0], raw[1], raw[4],
+        raw[2], raw[3], raw[5],
+        0.0,       0.0,       1.0,
+    ))
+}
+
+fn affine_to_raw(affine: Affine2<f32>) -> [f32; 6] {
+    let mat = affine.matrix();
+    [
+        mat.m11, mat.m12, mat.m21, mat.m22,
+        mat.m13, mat.m23
+    ]
 }
 
 mod _serde {
@@ -64,33 +81,27 @@ mod _serde {
         #[serde(default)]
         variation: Variation,
         #[serde(default="default_affine")]
-        affine: [f32; 6]
+        affine_pre: [f32; 6],
+        #[serde(default="default_affine")]
+        affine_post: [f32; 6],
     }
 
     impl From<FunctionSource> for Function {
         fn from(src: FunctionSource) -> Function {
-            let t = Transform::from_matrix_unchecked(Matrix3::new(
-                src.affine[0], src.affine[1], src.affine[4],
-                src.affine[2], src.affine[3], src.affine[5],
-                0.0,       0.0,       1.0,
-            ));
-
             Function {
-                var: src.variation,
-                trans: t,
+                variation: src.variation,
+                affine_pre: super::affine_from_raw(src.affine_pre),
+                affine_post: super::affine_from_raw(src.affine_post),
             }
         }
     }
 
     impl From<Function> for FunctionSource {
         fn from(func: Function) -> Self {
-            let mat = func.trans.matrix();
             FunctionSource {
-                variation: func.var,
-                affine: [
-                    mat.m11, mat.m12, mat.m21, mat.m22,
-                    mat.m13, mat.m23
-                ]
+                variation: func.variation,
+                affine_pre: super::affine_to_raw(func.affine_pre),
+                affine_post: super::affine_to_raw(func.affine_post),
             }
         }
     }
