@@ -17,7 +17,7 @@ pub struct FunctionEntry {
 }
 
 impl FunctionEntry {
-    fn new(
+    pub fn new(
         function: Function,
         weight: f32, color: f32, color_speed: f32
     ) -> Result<FunctionEntry, FunctionEntryError> {
@@ -46,6 +46,19 @@ pub struct Function {
 }
 
 impl Function {
+    pub fn new(variation: Variation, affine: [f32; 6]) -> Self {
+        let t = Transform::from_matrix_unchecked(Matrix3::new(
+            affine[0], affine[1], affine[4],
+            affine[2], affine[3], affine[5],
+            0.0,       0.0,       1.0,
+        ));
+
+        Function {
+            var: variation,
+            trans: t,
+        }
+    }
+
     pub fn eval(&self, rng: &mut impl Rng, arg: Point2<f32>) -> Point2<f32> {
         self.var.eval(rng, self.trans * arg)
     }
@@ -69,16 +82,18 @@ mod _serde {
 
     impl From<FunctionSource> for Function {
         fn from(src: FunctionSource) -> Function {
-            let t = Transform::from_matrix_unchecked(Matrix3::new(
-                src.affine[0], src.affine[1], src.affine[4],
-                src.affine[2], src.affine[3], src.affine[5],
-                0.0,       0.0,       1.0,
-            ));
+        //     let t = Transform::from_matrix_unchecked(Matrix3::new(
+        //         src.affine[0], src.affine[1], src.affine[4],
+        //         src.affine[2], src.affine[3], src.affine[5],
+        //         0.0,       0.0,       1.0,
+        //     ));
 
-            Function {
-                var: src.variation,
-                trans: t,
-            }
+        //     Function {
+        //         var: src.variation,
+        //         trans: t,
+        //     }
+        // }
+            Function::new(src.variation, src.affine)
         }
     }
 

@@ -11,6 +11,7 @@ pub struct RenderConfig {
     pub brightness: f64,
     pub width: usize,
     pub height: usize,
+    pub grayscale: bool,
 }
 
 impl<T: ToPrimitive + Clone> Buffer<T> {

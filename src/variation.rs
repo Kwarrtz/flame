@@ -42,7 +42,7 @@ pub enum Variation {
     Noise,
     Gaussian,
     JuliaScope(f32, f32),
-    Square,
+    // Square,
 }
 
 use self::Variation::*;
@@ -216,7 +216,7 @@ impl Variation {
                 let a = r().powf(dist / power);
                 (a * t.cos(), a * t.sin())
             }
-            Square => (rv.psi() - 0.5, rv.psi() - 0.5),
+            // Square => (rv.psi() - 0.5, rv.psi() - 0.5),
         };
 
         Point2::new(xo, yo)
@@ -228,15 +228,3 @@ impl Default for Variation {
         Id
     }
 }
-
-// pub struct VariationDistribution<D: Distribution<f32>>(D);
-
-// impl<D: Distribution<f32> + Copy> Distribution<Variation> for VariationDistribution<D> {
-//     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Variation {
-//         let discr = VARIATION_DISCRIMINANTS.choose(rng).unwrap().clone();
-//         let params: Vec<_> = self.0.sample_iter(rng)
-//             .take(discr.num_parameters())
-//             .collect();
-//         Variation::build(discr, params).unwrap()
-//     }
-// }

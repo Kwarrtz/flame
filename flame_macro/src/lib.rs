@@ -88,7 +88,7 @@ pub fn variation(_argument: TokenStream, input: TokenStream) -> TokenStream {
 
     let const_discrs_ident = Ident::new(&format!("{}_DISCRIMINANTS", ident.to_string().to_uppercase()), ident.span());
     let const_discrs = quote! {
-        const #const_discrs_ident: [#discr_ident; #num_variants] = [#(#discr_ident::#variant_idents),*];
+        pub const #const_discrs_ident: [#discr_ident; #num_variants] = [#(#discr_ident::#variant_idents),*];
     };
 
     // let match_branches = (0..num_variants);

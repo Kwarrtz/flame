@@ -26,7 +26,8 @@ fn generate_flame(
             vibrancy: 0.0,
             width: IMG_WIDTH,
             height: IMG_HEIGHT,
-            brightness: 20.
+            brightness: 20.,
+            grayscale: false,
         }, iters);
         let mut raw_image = vec![255u8; IMG_WIDTH * IMG_HEIGHT * 4];
         for (i, &bucket) in img_buffer.buckets.iter().enumerate() {

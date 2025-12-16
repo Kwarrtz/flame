@@ -136,12 +136,33 @@ impl Flame {
     }
 
     pub fn from_file(path: impl AsRef<Path>) -> Result<Flame, FlameError> {
-        let contents = std::fs::read_to_string(path.as_ref())?;
+        let contents = std::fs::read_to_string(path.as_ref())
+            .map_err(FlameError::FileReadError)?;
         Ok(match path.as_ref().extension().ok_or(FlameError::ExtensionError)?.to_str() {
             Some("json") => Flame::from_json(&contents)?,
             Some("ron") => Flame::from_ron(&contents)?,
             Some("yaml") => Flame::from_yaml(&contents)?,
             _ => return Err(FlameError::ExtensionError)
         })
+    }
+
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
+    }
+
+    pub fn to_yaml(&self) -> Result<String, serde_yaml::Error> {
+        serde_yaml::to_string(self)
+    }
+
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), FlameError> {
+        let serialized = match path.as_ref().extension().ok_or(FlameError::ExtensionError)?.to_str() {
+            Some("json") => self.to_json()?,
+            Some("yaml") => self.to_yaml()?,
+            _ => return Err(FlameError::ExtensionError)
+        };
+        std::fs::write(path, serialized)
+            .map_err(FlameError::FileWriteError)?;
+
+        Ok(())
     }
 }
