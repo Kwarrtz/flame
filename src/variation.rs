@@ -83,17 +83,6 @@ impl Variation {
             match theta_ {
                 Some(theta__) => theta__,
                 None => {
-                    // let theta__ = if y == 0.0 {
-                    //     if x == 0.0 {
-                    //         0.0
-                    //     } else if x > 0.0 {
-                    //         0.5 * PI
-                    //     } else {
-                    //         1.5 * PI
-                    //     }
-                    // } else {
-                    //     (x / y).atan()
-                    // };
                     let theta__ = x.atan2(y);
                     theta_ = Some(theta__);
                     theta__
@@ -106,17 +95,6 @@ impl Variation {
             match phi_ {
                 Some(phi__) => phi__,
                 None => {
-                    // let theta__ = if y == 0.0 {
-                    //     if x == 0.0 {
-                    //         0.0
-                    //     } else if x > 0.0 {
-                    //         0.5 * PI
-                    //     } else {
-                    //         1.5 * PI
-                    //     }
-                    // } else {
-                    //     (x / y).atan()
-                    // };
                     let phi__ = y.atan2(x);
                     phi_ = Some(phi__);
                     phi__
@@ -124,12 +102,6 @@ impl Variation {
             }
         };
 
-        // let mut psi = || { rng.random::<f32>() };
-
-        // let mut lambda = || { if rng.random::<bool>() { 1.0f32 } else { -1.0f32 } };
-
-        // let mut omega = || { if rng.random::<bool>() { 0. } else { PI } };
-        //
         let mut rv = RandVars(rng);
 
         let (xo, yo) = match self {

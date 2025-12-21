@@ -96,11 +96,6 @@ mod _serde {
 
     impl From<FunctionSource> for Function {
         fn from(src: FunctionSource) -> Function {
-            // Function {
-            //     variation: src.variation,
-            //     affine_pre: super::affine_from_raw(src.affine_pre),
-            //     affine_post: super::affine_from_raw(src.affine_post),
-            // }
             Function::from_raw(src.variation, src.affine_pre, src.affine_post)
         }
     }
