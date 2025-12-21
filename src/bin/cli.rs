@@ -1,7 +1,7 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, Args};
 use clap_num::si_number;
 use std::path::{Path, PathBuf};
-use rand::Rng;
+use rand::{distr::{StandardUniform, Uniform}, Rng};
 
 use flame::*;
 
@@ -50,12 +50,25 @@ enum Commands {
         output: PathBuf,
     },
     /// Randomly generate flames.
-    RandGen {
-        /// Number of flames to be generated.
-        num: usize,
-        /// Path to output directory.
-        output: PathBuf,
-    },
+    RandGen(RandGenArgs)
+}
+
+#[derive(Args)]
+struct RandGenArgs {
+    /// Number of flames to be generated.
+    num: usize,
+    /// Path to output directory.
+    output: PathBuf,
+    /// Scaling uniformity for affine transformations.
+    #[arg(short, long, default_value_t = 0.5)]
+    uniformity: f32,
+    /// Maximum skew for affine transformations.
+    #[arg(short, long, default_value_t = 0.5)]
+    skewness: f32,
+    /// Minimum and maximum number of function entries.
+    #[arg(short, long, default_values_t = [4, 7])]
+    #[arg(value_names = ["MIN", "MAX"])]
+    num_functions: Vec<usize>
 }
 
 impl Cli {
@@ -120,35 +133,63 @@ fn run() -> Result<(), FlameError> {
             );
         }
 
-        Commands::RandGen { num, output } => {
+        Commands::RandGen(args) => {
             let mut rng = rand::rng();
 
-            std::fs::create_dir(&output)
-                .map_err(FlameError::DirectoryWriteError)?;
+            if !std::fs::exists(&args.output)
+                .map_err(FlameError::DirectoryWriteError)?
+            {
+                std::fs::create_dir(&args.output)
+                    .map_err(FlameError::DirectoryWriteError)?;
+            }
 
             println!("Generating flames...");
 
             let before_run = std::time::Instant::now();
 
-            for i in 1..=num {
-                let file_output = output.join(PathBuf::from(i.to_string()));
+            let mut index = 1;
+            for _ in 1..=args.num {
+                let mut file_output: PathBuf;
+                let mut spec_output: PathBuf;
+                let mut img_output: PathBuf;
+                loop {
+                    file_output = args.output.join(PathBuf::from(index.to_string()));
+                    spec_output = file_output.with_extension("json");
+                    img_output = file_output.with_extension("png");
+
+                    let exists =
+                        std::fs::exists(&spec_output)
+                            .map_err(FlameError::FileWriteError)?
+                        ||std::fs::exists(&img_output)
+                            .map_err(FlameError::FileWriteError)?;
+                    if !exists {
+                        break;
+                    }
+
+                    index += 1;
+                }
 
                 let distr = random::FlameDistribution {
                     func_distr: random::FunctionDistribution {
-                        weight_distr: rand::distr::Uniform::new(-1., 1.).unwrap(),
+                        aff_distr: random::AffineDistribution {
+                            uniformity: args.uniformity,
+                            skewness: args.skewness
+                        },
                         var_distr: random::VariationDistribution(
-                            rand::distr::StandardUniform
+                            StandardUniform
                         ),
                     },
                     palette_distr: random::PaletteDistribution(3..=7),
-                    symmetry_range: 1..=1,
-                    func_num_range: 3..=6,
+                    symmetry_distr: Uniform::try_from(1..=1).unwrap(),
+                    func_num_distr: Uniform::try_from(
+                        args.num_functions[0]..=args.num_functions[1]
+                    ).unwrap(),
                 };
 
                 let flame = rng.sample(distr);
 
-                flame.save(file_output.with_extension("json"))?;
-                render_and_save(flame, file_output.with_extension("png"), run_cfg, render_cfg)?;
+                flame.save(spec_output)?;
+                render_and_save(flame, img_output, run_cfg, render_cfg)?;
             }
 
             let dur = before_run.elapsed();
@@ -157,7 +198,7 @@ fn run() -> Result<(), FlameError> {
                 "Completed! Rendered in {}.{:03} seconds. Output written to '{}'",
                 dur.as_secs(),
                 dur.subsec_millis(),
-                output.display()
+                args.output.display()
             );
         }
     };
