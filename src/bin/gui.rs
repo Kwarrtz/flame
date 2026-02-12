@@ -12,11 +12,7 @@ use kas::{
 use nalgebra::Affine2;
 use std::{
     fmt::Debug,
-    ops::DerefMut,
-    sync::{
-        Arc, Mutex,
-        mpsc::{Receiver, Sender, channel},
-    },
+    sync::mpsc::{Receiver, Sender, channel},
     thread,
     time::Duration,
 };
@@ -44,12 +40,11 @@ const DEFAULT_RENDER_CONFIG: RenderConfig = RenderConfig {
 };
 
 #[derive(Debug)]
-struct NewImage;
+struct NewImage(Size, Vec<u8>);
 
 fn generate_flame(
     rx_flame: Receiver<Flame>,
     rx_render_config: Receiver<RenderConfig>,
-    image_data: Arc<Mutex<Vec<u8>>>,
     mut proxy: Proxy,
 ) {
     let mut rng = rand::rng();
@@ -97,15 +92,11 @@ fn generate_flame(
         }
 
         if rerender {
-            {
-                let mut raw = image_data.lock().unwrap();
-                if raw.len() != 4 * config.width * config.height {
-                    *raw = vec![255; 4 * config.width * config.height];
-                }
-                buffer.render_raw_rgba(raw.deref_mut(), config, iters);
-            }
+            let mut img_buf = vec![255; 4 * config.width * config.height];
+            buffer.render_raw_rgba(&mut img_buf, config, iters);
 
-            if proxy.push(NewImage).is_err() {
+            let size = Size::new(config.width as i32, config.height as i32);
+            if proxy.push(NewImage(size, img_buf)).is_err() {
                 panic!("proxy closed");
             };
         }
@@ -130,7 +121,6 @@ struct AppData {
     flame: Flame,
     config_tx: Sender<RenderConfig>,
     flame_tx: Sender<Flame>,
-    image_data: Arc<Mutex<Vec<u8>>>,
 }
 
 impl kas::runner::AppData for AppData {
@@ -180,19 +170,21 @@ fn image_widget() -> impl Widget<Data = AppData> {
         .on_configure(|cx, widget| {
             cx.set_send_target_for::<NewImage>(widget.id());
         })
-        .on_messages(|cx, widget, data: &AppData| {
-            if let Some(NewImage) = cx.try_pop() {
+        .on_message(|cx, widget, NewImage(size, buf)| {
+            let action: ActionRedraw;
+            if size == widget.inner.image_size()
+                && let Some(handle) = widget.inner.handle()
+            {
+                action = cx.draw_shared().image_upload(handle, &buf).unwrap();
+            } else {
                 let new_handle = cx
                     .draw_shared()
-                    .image_alloc(
-                        kas::draw::ImageFormat::Rgba8,
-                        Size::new(data.config.width as i32, data.config.height as i32),
-                    )
+                    .image_alloc(kas::draw::ImageFormat::Rgba8, size)
                     .unwrap();
-                cx.draw_shared()
-                    .image_upload(&new_handle, &data.image_data.lock().unwrap()[..]);
+                action = cx.draw_shared().image_upload(&new_handle, &buf).unwrap();
                 widget.inner.set(cx, new_handle);
             }
+            cx.action_redraw(action);
         })
 }
 
@@ -347,7 +339,6 @@ fn function_list() -> impl Widget<Data = Flame> {
 fn main() -> kas::runner::Result<()> {
     let (config_tx, config_rx) = channel();
     let (flame_tx, flame_rx) = channel();
-    let image_data = Arc::new(Mutex::new(vec![]));
     let default_flame = Flame {
         functions: vec![FunctionEntry::default(), FunctionEntry::default()],
         last: flame::function::Function::default(),
@@ -365,14 +356,13 @@ fn main() -> kas::runner::Result<()> {
     let app = Runner::new(AppData {
         config: DEFAULT_RENDER_CONFIG,
         flame: default_flame,
-        image_data: image_data.clone(),
         config_tx,
         flame_tx,
     })
     .unwrap();
 
     let proxy = app.create_proxy();
-    thread::spawn(move || generate_flame(flame_rx, config_rx, image_data.clone(), proxy));
+    thread::spawn(move || generate_flame(flame_rx, config_rx, proxy));
 
     let config_box = render_config_widget()
         .map(|data: &AppData| &data.config)
