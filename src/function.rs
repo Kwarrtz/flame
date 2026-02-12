@@ -7,13 +7,24 @@ use super::{
     error::*
 };
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from="self::_serde::FunctionEntrySource", into="self::_serde::FunctionEntrySource")]
 pub struct FunctionEntry {
     pub function: Function,
     pub weight: f32,
     pub color: f32,
     pub color_speed: f32,
+}
+
+impl Default for FunctionEntry {
+    fn default() -> Self {
+        FunctionEntry {
+            function: Function::default(),
+            weight: 1.0,
+            color: 0.0,
+            color_speed: 0.5
+        }
+    }
 }
 
 impl FunctionEntry {

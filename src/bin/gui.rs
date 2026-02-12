@@ -1,104 +1,390 @@
-use flame::{Flame, RenderConfig, buffer::Buffer};
-use ribir::prelude::*;
-use async_channel::{self, Receiver, Sender};
-use std::{borrow::Cow, thread};
+use kas::{
+    cell_collection, collection,
+    image::Sprite,
+    prelude::*,
+    runner::{Proxy, Runner},
+    theme::{MarginStyle, MarkStyle},
+    widgets::{
+        Button, CheckBox, Column, ComboBox, EditBox, Filler, Frame, Grid, MarkButton, ScrollRegion,
+        SpinBox, Splitter, column, grid, row,
+    },
+};
+use nalgebra::Affine2;
+use std::{
+    fmt::Debug,
+    ops::DerefMut,
+    sync::{
+        Arc, Mutex,
+        mpsc::{Receiver, Sender, channel},
+    },
+    thread,
+    time::Duration,
+};
 
-const IMG_WIDTH: usize = 1_000;
-const IMG_HEIGHT: usize = 1_000;
-const ITERS_PER_LOOP: usize = 1_000_000;
+use flame::{
+    self, Flame, RenderConfig,
+    bounds::Bounds,
+    buffer::Buffer,
+    color::{Color, Palette},
+    function::FunctionEntry,
+    variation::{VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant},
+};
+
+const ITERS_PER_LOOP: usize = 100_000;
+const MAX_ITERS: usize = 1_000_000_000;
+const IDLE_SLEEP_DUR: Duration = Duration::from_millis(30);
+
+const DEFAULT_RENDER_CONFIG: RenderConfig = RenderConfig {
+    gamma: 1.0,
+    vibrancy: 0.0,
+    width: 500,
+    height: 500,
+    brightness: 20.,
+    grayscale: false,
+};
+
+#[derive(Debug)]
+struct NewImage;
 
 fn generate_flame(
     rx_flame: Receiver<Flame>,
-    tx_image: Sender<PixelImage>,
-    event_sender: EventSender
+    rx_render_config: Receiver<RenderConfig>,
+    image_data: Arc<Mutex<Vec<u8>>>,
+    mut proxy: Proxy,
 ) {
-    let mut buffer: Buffer<u32> = Buffer::new(IMG_WIDTH, IMG_HEIGHT);
     let mut rng = rand::rng();
-    let mut flame = rx_flame.recv_blocking().unwrap();
+
+    let mut flame = rx_flame.recv().unwrap();
+    let mut config = rx_render_config.recv().unwrap();
+
+    let mut buffer: Buffer<u32> = Buffer::new(config.width, config.height);
     let mut iters = 0;
 
     loop {
-        flame.run_partial(&mut buffer, ITERS_PER_LOOP, &mut rng);
-        iters += ITERS_PER_LOOP;
+        let mut rerender = false; // rerender image from buffer
+        let mut restart = false; // create fresh buffer
 
-        let img_buffer: Buffer<u8> = buffer.render(RenderConfig {
-            gamma: 1.0,
-            vibrancy: 0.0,
-            width: IMG_WIDTH,
-            height: IMG_HEIGHT,
-            brightness: 20.,
-            grayscale: false,
-        }, iters);
-        let mut raw_image = vec![255u8; IMG_WIDTH * IMG_HEIGHT * 4];
-        for (i, &bucket) in img_buffer.buckets.iter().enumerate() {
-            raw_image[4 * i] = bucket.red;
-            raw_image[4 * i + 1] = bucket.green;
-            raw_image[4 * i + 2] = bucket.blue;
+        if iters < MAX_ITERS {
+            // advance flame simulation
+            flame.run_partial(&mut buffer, ITERS_PER_LOOP, &mut rng);
+            iters += ITERS_PER_LOOP;
+            rerender = true;
+        } else {
+            // if hit MAX_ITERS, sleep and wait for input
+            thread::sleep(IDLE_SLEEP_DUR);
         }
-        let ribir_image = PixelImage::new(
-            Cow::from(raw_image),
-            IMG_WIDTH as u32, IMG_HEIGHT as u32,
-            image::ColorFormat::Rgba8
-        );
-        tx_image.force_send(ribir_image).unwrap();
-        event_sender.send(AppEvent::FuturesWake);
 
-        if let Ok(new_flame) = rx_flame.try_recv() {
+        // received new flame
+        if let Some(new_flame) = rx_flame.try_iter().last() {
             flame = new_flame;
-            buffer = Buffer::new(IMG_WIDTH, IMG_HEIGHT);
+            restart = true;
+        }
+
+        // received new render config
+        if let Some(new_config) = rx_render_config.try_iter().last() {
+            // dimensions changed
+            if [new_config.width, new_config.height] != [config.width, config.height] {
+                restart = true;
+            }
+
+            rerender = true;
+            config = new_config;
+        }
+
+        if restart {
+            buffer = Buffer::new(config.width, config.height);
             iters = 0;
+        }
+
+        if rerender {
+            {
+                let mut raw = image_data.lock().unwrap();
+                if raw.len() != 4 * config.width * config.height {
+                    *raw = vec![255; 4 * config.width * config.height];
+                }
+                buffer.render_raw_rgba(raw.deref_mut(), config, iters);
+            }
+
+            if proxy.push(NewImage).is_err() {
+                panic!("proxy closed");
+            };
         }
     }
 }
 
-fn main() {
-    let (tx_flame, rx_flame) = async_channel::bounded::<Flame>(1);
-    let (tx_image, rx_image) = async_channel::bounded::<PixelImage>(1);
-    let event_sender = App::event_sender();
-    thread::spawn(move || generate_flame(rx_flame, tx_image, event_sender));
+#[derive(Debug)]
+enum RenderConfigUpdate {
+    Width(usize),
+    Height(usize),
+    Grayscale(bool),
+}
 
-    App::run(fn_widget! {
-        let flame: State<Option<Flame>> = State::value(None);
+#[derive(Debug)]
+struct FlameUpdate(Flame);
 
-        watch!($flame;)
-            .subscribe(move |_| {
-                if let Some(flame_) = $flame.clone() {
-                    tx_flame.force_send(flame_).unwrap();
-                }
-            });
+#[derive(Debug)]
+struct AffineUpdate(Affine2<f32>);
 
-        let image = FatObj::new(State::value(Resource::new(PixelImage::new(
-            Cow::from(&[0u8; 500*500*4]),
-            500, 500,
-            image::ColorFormat::Rgba8
-        ))));
+struct AppData {
+    config: RenderConfig,
+    flame: Flame,
+    config_tx: Sender<RenderConfig>,
+    flame_tx: Sender<Flame>,
+    image_data: Arc<Mutex<Vec<u8>>>,
+}
 
-        observable::from_stream(rx_image, AppCtx::scheduler())
-            .subscribe(move |new_image| {
-                *$image.write() = Resource::new(new_image);
-            });
-
-        let flame_input = @TextArea { rows: 1000. };
-        @Flex {
-            direction: Direction::Horizontal,
-            align_items: Align::Center,
-            background: Brush::Color(Color::WHITE),
-            @Expanded {
-                @ $image {
-                    box_fit: BoxFit::CoverX
-                }
+impl kas::runner::AppData for AppData {
+    fn handle_message(&mut self, messages: &mut impl kas::runner::ReadMessage) {
+        if let Some(msg) = messages.try_pop::<RenderConfigUpdate>() {
+            use RenderConfigUpdate::*;
+            match msg {
+                Width(w) => self.config.width = w,
+                Height(h) => self.config.height = h,
+                Grayscale(gs) => self.config.grayscale = gs,
             }
-            @Expanded {
-                @ $flame_input {
-                    border: Border::all(BorderSide::new(1.0, Brush::Color(Color::BLACK))),
-                    border_radius: Radius::all(3.0),
-                    on_chars: move |_| {
-                        *$flame.write() = Flame::from_yaml(
-                            &$flame_input.text()
-                        ).ok();
-                    }
-                }
-            }
+
+            self.config_tx.send(self.config.clone()).unwrap();
         }
+
+        if let Some(FlameUpdate(new_flame)) = messages.try_pop()
+            && self.flame != new_flame
+        {
+            self.flame = new_flame;
+            self.flame_tx.send(self.flame.clone()).unwrap();
+        }
+    }
+}
+
+fn render_config_widget() -> impl Widget<Data = RenderConfig> {
+    use RenderConfigUpdate::*;
+    row![
+        "Width:",
+        EditBox::parser(|cfg: &RenderConfig| cfg.width, |value| Width(value)).with_width_em(3., 3.),
+        "Height:",
+        EditBox::parser(|cfg: &RenderConfig| cfg.height, |value| Height(value))
+            .with_width_em(3., 3.),
+        "Grayscale:",
+        CheckBox::new_msg(
+            |_, cfg: &RenderConfig| cfg.grayscale,
+            |checked| Grayscale(checked)
+        ),
+        Filler::maximize().map_any()
+    ]
+}
+
+fn image_widget() -> impl Widget<Data = AppData> {
+    Sprite::new()
+        .with_logical_size((300., 300.))
+        .with_stretch(Stretch::Maximize)
+        .map_any()
+        .on_configure(|cx, widget| {
+            cx.set_send_target_for::<NewImage>(widget.id());
+        })
+        .on_messages(|cx, widget, data: &AppData| {
+            if let Some(NewImage) = cx.try_pop() {
+                let new_handle = cx
+                    .draw_shared()
+                    .image_alloc(
+                        kas::draw::ImageFormat::Rgba8,
+                        Size::new(data.config.width as i32, data.config.height as i32),
+                    )
+                    .unwrap();
+                cx.draw_shared()
+                    .image_upload(&new_handle, &data.image_data.lock().unwrap()[..]);
+                widget.inner.set(cx, new_handle);
+            }
+        })
+}
+
+#[derive(Debug)]
+struct InnerVal<T>(T);
+
+#[derive(Debug, Clone)]
+struct ListAdd;
+
+#[derive(Debug, Clone)]
+struct ListRemove(usize);
+
+fn affine_field(index: (usize, usize)) -> impl Widget<Data = Affine2<f32>> {
+    EditBox::parser(
+        move |affine: &Affine2<f32>| affine.matrix()[index],
+        |val| val,
+    )
+    .with_width_em(1., 1.5)
+    .on_messages(move |cx, _, affine: &Affine2<f32>| {
+        if let Some(val) = cx.try_pop::<f32>() {
+            let mut new = affine.clone();
+            new.matrix_mut_unchecked()[index] = val;
+            cx.push(AffineUpdate(new));
+        }
+    })
+}
+
+fn affine() -> impl Widget<Data = Affine2<f32>> {
+    grid! {
+        (0, 0) => affine_field((0, 0)),
+        (1, 0) => affine_field((0, 1)),
+        (0, 1) => affine_field((1, 0)),
+        (1, 1) => affine_field((1, 1)),
+        (2, 0) => affine_field((0, 2)),
+        (2, 1) => affine_field((1, 2))
+    }
+    .align(AlignHints {
+        horiz: None,
+        vert: Some(Align::Center),
+    })
+}
+
+trait FlameAdaptWidget: Widget<Data = Flame> + Sized {
+    fn flame_set<T: Debug + 'static>(
+        self,
+        f: impl Fn(&mut Flame, T) + 'static,
+    ) -> impl Widget<Data = Flame> {
+        self.on_messages(move |cx, _, flame: &Flame| {
+            if let Some(InnerVal(val)) = cx.try_pop() {
+                let mut new = flame.clone();
+                f(&mut new, val);
+                cx.push(FlameUpdate(new));
+            }
+        })
+    }
+}
+
+impl<T: Widget<Data = Flame> + Sized> FlameAdaptWidget for T {}
+
+fn function_entry(index: usize) -> impl Widget<Data = Flame> {
+    let affine_pre = affine()
+        .map(move |flame: &Flame| &flame.functions[index].function.affine_pre)
+        .on_messages(move |cx, _, flame: &Flame| {
+            if let Some(AffineUpdate(affine)) = cx.try_pop() {
+                let mut new = flame.clone();
+                new.functions[index].function.affine_pre = affine;
+                cx.push(FlameUpdate(new));
+            }
+        });
+    let affine_post = affine()
+        .map(move |flame: &Flame| &flame.functions[index].function.affine_post)
+        .on_messages(move |cx, _, flame: &Flame| {
+            if let Some(AffineUpdate(affine)) = cx.try_pop() {
+                let mut new = flame.clone();
+                new.functions[index].function.affine_post = affine;
+                cx.push(FlameUpdate(new));
+            }
+        });
+    let variation = ComboBox::new_msg(
+        VARIATION_DISCRIMINANTS
+            .iter()
+            .map(|v| (format!("{v:?}"), v.clone())),
+        move |_, flame: &Flame| flame.functions[index].function.variation.into(),
+        |v| InnerVal(v),
+    )
+    .flame_set(move |flame, discr: VariationDiscriminant| {
+        let var = Variation::build(discr, vec![0.0; discr.num_parameters()]).unwrap();
+        flame.functions[index].function.variation = var;
     });
+    Frame::new(Grid::new(cell_collection! {
+        (0, 0) => "Weight:",
+        (1, 0) => SpinBox::new_msg(
+            0.0..=1.0,
+            move |_, flame: &Flame| flame.functions[index].weight,
+            |v| InnerVal(v)
+        ).with_step(0.1)
+        .with_width_em(1.0, 1.5)
+        .flame_set(move |flame, weight| flame.functions[index].weight = weight),
+        (0..=1, 1) => variation,
+        (4, 0) => "Color:",
+        (5, 0) => SpinBox::new_msg(
+            0.0..=1.0,
+            move |_, flame: &Flame| flame.functions[index].color,
+            |v| InnerVal(v)
+        ).with_step(0.1)
+        .with_width_em(1.0, 1.5)
+        .flame_set(move |flame, val| flame.functions[index].color = val),
+        (4, 1) => "Speed:",
+        (5, 1) => SpinBox::new_msg(
+            0.0..=1.0,
+            move |_, flame: &Flame| flame.functions[index].color_speed,
+            |v| InnerVal(v)
+        ).with_step(0.1)
+        .with_width_em(1.0, 1.5)
+        .flame_set(move |flame, val| flame.functions[index].color_speed = val),
+        (2, 0..=1) => Frame::new(affine_pre),
+        (3, 0..=1) => Frame::new(affine_post),
+        (6, 0..=1) => MarkButton::new_msg(MarkStyle::X, "delete", ListRemove(index)).map_any(),
+    }))
+}
+
+fn function_list() -> impl Widget<Data = Flame> {
+    ScrollRegion::new_clip(column![
+        Button::label_msg("Add Function", ListAdd)
+            .map_any()
+            .on_messages(move |cx, _, flame: &Flame| {
+                if let Some(ListAdd) = cx.try_pop() {
+                    let mut new = flame.clone();
+                    new.functions.push(FunctionEntry::default());
+                    cx.push(FlameUpdate(new));
+                }
+            }),
+        Column::new(vec![])
+            .on_update(|cx, widget, flame: &Flame| {
+                if flame.functions.len() != widget.len() {
+                    widget.clear();
+                    widget.resize_with(cx, flame, flame.functions.len(), function_entry);
+                }
+            })
+            .on_messages(move |cx, widget, flame: &Flame| {
+                if let Some(ListRemove(i)) = cx.try_pop() {
+                    widget.clear();
+                    let mut new = flame.clone();
+                    new.functions.remove(i);
+                    cx.push(FlameUpdate(new));
+                }
+            }),
+        Filler::maximize().map_any()
+    ])
+}
+
+fn main() -> kas::runner::Result<()> {
+    let (config_tx, config_rx) = channel();
+    let (flame_tx, flame_rx) = channel();
+    let image_data = Arc::new(Mutex::new(vec![]));
+    let default_flame = Flame {
+        functions: vec![FunctionEntry::default(), FunctionEntry::default()],
+        last: flame::function::Function::default(),
+        symmetry: 1,
+        palette: Palette::new::<std::iter::Empty<f32>>(
+            vec![Color::rgb(255, 255, 255), Color::rgb(255, 255, 255)],
+            None,
+        )
+        .unwrap(),
+        bounds: Bounds::new(-1., 1., -1., 1.),
+    };
+    flame_tx.send(default_flame.clone()).unwrap();
+    config_tx.send(DEFAULT_RENDER_CONFIG).unwrap();
+
+    let app = Runner::new(AppData {
+        config: DEFAULT_RENDER_CONFIG,
+        flame: default_flame,
+        image_data: image_data.clone(),
+        config_tx,
+        flame_tx,
+    })
+    .unwrap();
+
+    let proxy = app.create_proxy();
+    thread::spawn(move || generate_flame(flame_rx, config_rx, image_data.clone(), proxy));
+
+    let config_box = render_config_widget()
+        .map(|data: &AppData| &data.config)
+        .with_stretch(None, Some(Stretch::None));
+
+    let image = image_widget();
+
+    let editor = function_list()
+        .map(|data: &AppData| &data.flame)
+        .with_margin_style(MarginStyle::Large);
+
+    let root = column![Splitter::right(collection![image, editor]), config_box];
+
+    app.with(Window::new(root, "Flame Editor")).run()
 }

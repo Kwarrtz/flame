@@ -23,6 +23,16 @@ impl<T: ToPrimitive + Clone> Buffer<T> {
         buffer.clamp();
         buffer.scale_convert()
     }
+
+    pub fn render_raw_rgba(&self, raw: &mut [u8], cfg: RenderConfig, iters: usize) {
+        let img_buffer = self.render(cfg, iters);
+        img_buffer.write_to_raw_rgba8(raw, cfg.grayscale);
+    }
+
+    pub fn render_image(&self, cfg: RenderConfig, iters: usize) -> DynamicImage {
+        let img_buffer = self.render(cfg, iters);
+        img_buffer.to_dynamic8(cfg.grayscale)
+    }
 }
 
 impl<T: Float + NumAssign + Copy> Buffer<T> {
@@ -82,6 +92,27 @@ fn scale<T: Float, S: Bounded + Num + NumCast>(val: T) -> S {
 }
 
 impl Buffer<u8> {
+    pub fn write_to_raw_rgba8(self, raw: &mut [u8], grayscale: bool) {
+        assert_eq!(
+            raw.len(), 4 * self.width * self.height,
+            "attempting to write to RGBA buffer of size {} when Buffer has size {}x{}",
+            raw.len(), self.width, self.height
+        );
+
+        for (i, bucket) in self.buckets.iter().enumerate() {
+            if grayscale {
+                raw[4*i + 0] = bucket.alpha;
+                raw[4*i + 1] = bucket.alpha;
+                raw[4*i + 2] = bucket.alpha;
+            } else {
+                raw[4*i + 0] = bucket.red;
+                raw[4*i + 1] = bucket.green;
+                raw[4*i + 2] = bucket.blue;
+            }
+            raw[4*i + 3] = 255;
+        }
+    }
+
     pub fn to_gray8(&self) -> GrayImage {
         let raw = self.buckets.iter().map(|b| b.alpha).collect();
         ImageBuffer::from_raw(self.width as u32, self.height as u32, raw)

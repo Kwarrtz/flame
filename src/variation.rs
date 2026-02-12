@@ -83,7 +83,20 @@ impl Variation {
             match theta_ {
                 Some(theta__) => theta__,
                 None => {
-                    let theta__ = x.atan2(y);
+                    // let theta__ = x.atan2(y);
+                    // theta_ = Some(theta__);
+                    // theta__
+                    let theta__ = if y == 0.0 {
+                        if x == 0.0 {
+                            0.0
+                        } else if x > 0.0 {
+                            0.5 * PI
+                        } else {
+                            1.5 * PI
+                        }
+                    } else {
+                        (x / y).atan()
+                    };
                     theta_ = Some(theta__);
                     theta__
                 }
