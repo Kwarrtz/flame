@@ -4,7 +4,7 @@ use super::error::PaletteError;
 // use super::file::RgbSource;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from="self::_serde::RgbSource", into="self::_serde::RgbSource")]
+#[serde(from = "self::_serde::RgbSource", into = "self::_serde::RgbSource")]
 pub struct Color {
     pub red: u8,
     pub green: u8,
@@ -20,13 +20,17 @@ impl Color {
         Color { red, green, blue }
     }
 
-    pub const WHITE: Color = Color { red: 255, green: 255, blue: 255 };
+    pub const WHITE: Color = Color {
+        red: 255,
+        green: 255,
+        blue: 255,
+    };
 
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
         Color {
             red: lerp(start.red, end.red, t),
             green: lerp(start.green, end.green, t),
-            blue: lerp(start.blue, end.blue, t)
+            blue: lerp(start.blue, end.blue, t),
         }
     }
 }
@@ -38,18 +42,24 @@ impl Default for Color {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from="self::_serde::PaletteSource", into="self::_serde::PaletteSource")]
+#[serde(
+    try_from = "self::_serde::PaletteSource",
+    into = "self::_serde::PaletteSource"
+)]
 pub struct Palette {
     keys: Vec<f32>,
-    colors: Vec<Color>
+    colors: Vec<Color>,
 }
 
 impl Palette {
     pub fn new<I>(
-        colors: impl IntoIterator<Item=Color>,
-        keys: Option<I>
+        colors: impl IntoIterator<Item = Color>,
+        keys: Option<I>,
     ) -> Result<Palette, PaletteError>
-    where I: IntoIterator<Item=f32>, I::IntoIter: Clone {
+    where
+        I: IntoIterator<Item = f32>,
+        I::IntoIter: Clone,
+    {
         let colors_: Vec<Color> = colors.into_iter().collect();
 
         let keys_: Vec<_> = match keys {
@@ -60,39 +70,90 @@ impl Palette {
 
             Some(keys__) => {
                 let keys__ = keys__.into_iter();
-                if keys__.clone().any(|k| k <= 0.0 || k >= 1.0) {
-                    return Err(PaletteError::OutOfBounds)
+                if keys__.clone().any(|k| k < 0.0 || k > 1.0) {
+                    return Err(PaletteError::OutOfBounds);
                 }
-                if keys__.clone()
+                if keys__
+                    .clone()
                     .zip(keys__.clone().skip(1))
                     .any(|(k, kn)| k >= kn)
                 {
-                    return Err(PaletteError::NonMonotonic)
+                    return Err(PaletteError::NonMonotonic);
                 };
                 keys__.collect()
             }
         };
 
         if keys_.len() + 2 != colors_.len() {
-            return Err(PaletteError::IncorrectNumber)
+            return Err(PaletteError::IncorrectNumber);
         }
 
-        Ok(Palette { keys: keys_, colors: colors_ })
+        Ok(Palette {
+            keys: keys_,
+            colors: colors_,
+        })
     }
 
     pub fn sample(&self, c: f32) -> Option<Color> {
-        if c < 0.0 || c > 1.0 { return None };
+        if c < 0.0 || c > 1.0 {
+            return None;
+        };
 
         let i = match self.keys.iter().rposition(|&k| k < c) {
             None => 0,
-            Some(j) => j + 1
+            Some(j) => j + 1,
         };
         // println!("{}", i);
         let kbefore = self.keys.get(i.wrapping_sub(1)).unwrap_or(&0.0);
         let kafter = self.keys.get(i).unwrap_or(&1.0);
         let t = (c - kbefore) / (kafter - kbefore);
 
-        Some(Color::lerp(self.colors[i], self.colors[i+1], t))
+        Some(Color::lerp(self.colors[i], self.colors[i + 1], t))
+    }
+
+    pub fn add(&mut self, color: Color) {
+        self.colors.insert(self.colors.len() - 1, color);
+        self.keys.push(1.0);
+    }
+
+    pub fn remove(&mut self, index: usize) {
+        if index >= self.len() {
+            panic!("index out of bounds");
+        }
+
+        if self.len() <= 2 {
+            panic!("attempted to remove color from minimum size palette");
+        }
+
+        if index == 0 {
+            self.keys.remove(0);
+        } else if index == self.len() - 1 {
+            self.keys.remove(self.len() - 3);
+        } else {
+            self.keys.remove(index - 1);
+        }
+
+        self.colors.remove(index);
+    }
+
+    pub fn len(&self) -> usize {
+        self.colors.len()
+    }
+
+    pub fn get(&self, index: usize) -> Option<(Color, f32)> {
+        let key = if index == 0 {
+            0.0
+        } else if index == self.len() - 1 {
+            1.0
+        } else {
+            self.keys.get(index - 1)?.clone()
+        };
+
+        Some((self.colors.get(index)?.clone(), key))
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> (Option<&mut Color>, Option<&mut f32>) {
+        (self.colors.get_mut(index), self.keys.get_mut(index - 1))
     }
 }
 
@@ -100,7 +161,7 @@ impl Default for Palette {
     fn default() -> Palette {
         Palette {
             keys: vec![],
-            colors: vec![Color::WHITE, Color::WHITE]
+            colors: vec![Color::WHITE, Color::WHITE],
         }
     }
 }
@@ -111,7 +172,7 @@ mod _serde {
     #[derive(Serialize, Deserialize)]
     pub struct PaletteSource {
         colors: Vec<Color>,
-        keys: Option<Vec<f32>>
+        keys: Option<Vec<f32>>,
     }
 
     impl TryFrom<PaletteSource> for Palette {
@@ -126,13 +187,13 @@ mod _serde {
         fn from(palette: Palette) -> PaletteSource {
             PaletteSource {
                 colors: palette.colors,
-                keys: Some(palette.keys)
+                keys: Some(palette.keys),
             }
         }
     }
 
     #[derive(Serialize, Deserialize)]
-    #[serde(rename="Rgb")]
+    #[serde(rename = "Rgb")]
     pub struct RgbSource(u8, u8, u8);
 
     impl From<RgbSource> for Color {
