@@ -31,8 +31,6 @@ const MAX_ITERS: usize = 1_000_000_000;
 const IDLE_SLEEP_DUR: Duration = Duration::from_millis(30);
 
 const DEFAULT_RENDER_CONFIG: RenderConfig = RenderConfig {
-    gamma: 1.0,
-    vibrancy: 0.0,
     width: 500,
     height: 500,
     brightness: 20.,

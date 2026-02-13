@@ -1,13 +1,11 @@
 use image::{DynamicImage, GrayImage, ImageBuffer, RgbImage};
-use num_traits::{clamp, one, zero, Bounded, Float, Num, NumAssign, NumCast, ToPrimitive};
+use num_traits::{Bounded, Float, Num, NumAssign, NumCast, ToPrimitive, clamp, one, zero};
 
-use super::buffer::*;
 use super::bucket::*;
+use super::buffer::*;
 
 #[derive(Clone, Copy)]
 pub struct RenderConfig {
-    pub gamma: f64,
-    pub vibrancy: f64,
     pub brightness: f64,
     pub width: usize,
     pub height: usize,
@@ -19,8 +17,6 @@ impl<T: ToPrimitive + Clone> Buffer<T> {
         let mut buffer = self.clone().convert::<f64>();
         buffer.log_density(cfg.brightness, iters as f64);
         buffer.normalize();
-        buffer.gamma(cfg.gamma, cfg.vibrancy);
-        buffer.clamp();
         buffer.scale_convert()
     }
 
@@ -94,22 +90,25 @@ fn scale<T: Float, S: Bounded + Num + NumCast>(val: T) -> S {
 impl Buffer<u8> {
     pub fn write_to_raw_rgba8(self, raw: &mut [u8], grayscale: bool) {
         assert_eq!(
-            raw.len(), 4 * self.width * self.height,
+            raw.len(),
+            4 * self.width * self.height,
             "attempting to write to RGBA buffer of size {} when Buffer has size {}x{}",
-            raw.len(), self.width, self.height
+            raw.len(),
+            self.width,
+            self.height
         );
 
         for (i, bucket) in self.buckets.iter().enumerate() {
             if grayscale {
-                raw[4*i + 0] = bucket.alpha;
-                raw[4*i + 1] = bucket.alpha;
-                raw[4*i + 2] = bucket.alpha;
+                raw[4 * i + 0] = bucket.alpha;
+                raw[4 * i + 1] = bucket.alpha;
+                raw[4 * i + 2] = bucket.alpha;
             } else {
-                raw[4*i + 0] = bucket.red;
-                raw[4*i + 1] = bucket.green;
-                raw[4*i + 2] = bucket.blue;
+                raw[4 * i + 0] = bucket.red;
+                raw[4 * i + 1] = bucket.green;
+                raw[4 * i + 2] = bucket.blue;
             }
-            raw[4*i + 3] = 255;
+            raw[4 * i + 3] = 255;
         }
     }
 

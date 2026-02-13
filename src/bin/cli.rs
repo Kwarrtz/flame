@@ -1,7 +1,10 @@
-use clap::{Parser, Subcommand, Args};
+use clap::{Args, Parser, Subcommand};
 use clap_num::si_number;
+use rand::{
+    Rng,
+    distr::{StandardUniform, Uniform},
+};
 use std::path::{Path, PathBuf};
-use rand::{distr::{StandardUniform, Uniform}, Rng};
 
 use flame::*;
 
@@ -26,18 +29,8 @@ struct Cli {
     #[arg(short, long, default_value_t = 20.0)]
     brightness: f64,
     /// Output a grayscale image, ignoring any specified color information.
-    #[arg(short='G', long)]
+    #[arg(short = 'G', long)]
     grayscale: bool,
-    /// Gamma correction factor. (Deprecated, recommended to use the `brightness` flag instead.)
-    #[arg(short, long, default_value_t = 1.0)]
-    gamma: f64,
-    /// Gamma color vibrancy (between 0 and 1).
-    ///
-    /// When this value is zero, gamma correction is applied independently to each color channel,
-    /// which can lead to washed out colors. When it is one, gamma correction only affects luminance.
-    /// Values between 0 and 1 interpolate geometrically between these extremes.
-    #[arg(short, long, default_value_t = 0.5)]
-    vibrancy: f64,
 }
 
 #[derive(Subcommand)]
@@ -50,7 +43,7 @@ enum Commands {
         output: PathBuf,
     },
     /// Randomly generate flames.
-    RandGen(RandGenArgs)
+    RandGen(RandGenArgs),
 }
 
 #[derive(Args)]
@@ -68,7 +61,7 @@ struct RandGenArgs {
     /// Minimum and maximum number of function entries.
     #[arg(short, long, default_values_t = [4, 7])]
     #[arg(value_names = ["MIN", "MAX"])]
-    num_functions: Vec<usize>
+    num_functions: Vec<usize>,
 }
 
 impl Cli {
@@ -85,8 +78,6 @@ impl Cli {
         RenderConfig {
             width: self.dims[0],
             height: self.dims[1],
-            gamma: self.gamma,
-            vibrancy: self.vibrancy,
             brightness: self.brightness,
             grayscale: self.grayscale,
         }
@@ -97,9 +88,8 @@ fn render_and_save(
     flame: Flame,
     out: impl AsRef<Path>,
     run_cfg: RunConfig,
-    render_cfg: RenderConfig
-) -> Result<(), FlameError>
-{
+    render_cfg: RenderConfig,
+) -> Result<(), FlameError> {
     let buffer = flame.run(run_cfg);
     let img_buffer = buffer.render(render_cfg, run_cfg.iters);
 
@@ -136,11 +126,8 @@ fn run() -> Result<(), FlameError> {
         Commands::RandGen(args) => {
             let mut rng = rand::rng();
 
-            if !std::fs::exists(&args.output)
-                .map_err(FlameError::DirectoryWriteError)?
-            {
-                std::fs::create_dir(&args.output)
-                    .map_err(FlameError::DirectoryWriteError)?;
+            if !std::fs::exists(&args.output).map_err(FlameError::DirectoryWriteError)? {
+                std::fs::create_dir(&args.output).map_err(FlameError::DirectoryWriteError)?;
             }
 
             println!("Generating flames...");
@@ -157,11 +144,9 @@ fn run() -> Result<(), FlameError> {
                     spec_output = file_output.with_extension("json");
                     img_output = file_output.with_extension("png");
 
-                    let exists =
-                        std::fs::exists(&spec_output)
-                            .map_err(FlameError::FileWriteError)?
-                        ||std::fs::exists(&img_output)
-                            .map_err(FlameError::FileWriteError)?;
+                    let exists = std::fs::exists(&spec_output)
+                        .map_err(FlameError::FileWriteError)?
+                        || std::fs::exists(&img_output).map_err(FlameError::FileWriteError)?;
                     if !exists {
                         break;
                     }
@@ -173,17 +158,16 @@ fn run() -> Result<(), FlameError> {
                     func_distr: random::FunctionDistribution {
                         aff_distr: random::AffineDistribution {
                             uniformity: args.uniformity,
-                            skewness: args.skewness
+                            skewness: args.skewness,
                         },
-                        var_distr: random::VariationDistribution(
-                            StandardUniform
-                        ),
+                        var_distr: random::VariationDistribution(StandardUniform),
                     },
                     palette_distr: random::PaletteDistribution(3..=7),
                     symmetry_distr: Uniform::try_from(1..=1).unwrap(),
                     func_num_distr: Uniform::try_from(
-                        args.num_functions[0]..=args.num_functions[1]
-                    ).unwrap(),
+                        args.num_functions[0]..=args.num_functions[1],
+                    )
+                    .unwrap(),
                 };
 
                 let flame = rng.sample(distr);
