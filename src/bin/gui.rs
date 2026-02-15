@@ -6,7 +6,7 @@ use kas::{
     theme::{MarginStyle, MarkStyle},
     widgets::{
         Button, CheckBox, Column, ComboBox, EditBox, Filler, Frame, Grid, MarkButton, ScrollRegion,
-        SpinBox, Splitter, adapt::AdaptEventCx, column, grid, row,
+        Separator, SpinBox, Splitter, adapt::AdaptEventCx, column, grid, row,
     },
 };
 use nalgebra::Affine2;
@@ -112,6 +112,12 @@ enum RenderConfigUpdate {
 #[derive(Debug)]
 struct FlameUpdate(Flame);
 
+#[derive(Debug)]
+struct SaveFileTo(Option<rfd::FileHandle>);
+
+#[derive(Debug)]
+struct LoadFileFrom(Option<rfd::FileHandle>);
+
 struct AppData {
     config: RenderConfig,
     flame: Flame,
@@ -139,35 +145,100 @@ impl kas::runner::AppData for AppData {
             self.flame = new_flame;
             self.flame_tx.send(self.flame.clone()).unwrap();
         }
+
+        if let Some(SaveFileTo(Some(handle))) = messages.try_pop() {
+            self.flame.save(handle.path()).unwrap();
+        }
+
+        if let Some(LoadFileFrom(Some(handle))) = messages.try_pop() {
+            self.flame = Flame::from_file(handle.path()).unwrap();
+            self.flame_tx.send(self.flame.clone()).unwrap();
+        }
     }
 }
 
-fn render_config_widget() -> impl Widget<Data = RenderConfig> {
+fn render_config_panel() -> impl Widget<Data = RenderConfig> {
     use RenderConfigUpdate::*;
-    row![
-        "Width:",
-        EditBox::parser(|cfg: &RenderConfig| cfg.width, |value| Width(value)).with_width_em(3., 3.),
-        "Height:",
-        EditBox::parser(|cfg: &RenderConfig| cfg.height, |value| Height(value))
+    column![
+        row![
+            "Width:",
+            EditBox::parser(|cfg: &RenderConfig| cfg.width, |value| Width(value))
+                .with_width_em(3., 3.),
+            "Height:",
+            EditBox::parser(|cfg: &RenderConfig| cfg.height, |value| Height(value))
+                .with_width_em(3., 3.),
+        ],
+        row![
+            "Brightness:",
+            EditBox::parser(
+                |cfg: &RenderConfig| cfg.brightness,
+                |value| Brightness(value)
+            )
             .with_width_em(3., 3.),
-        "Grayscale:",
-        CheckBox::new_msg(
-            |_, cfg: &RenderConfig| cfg.grayscale,
-            |checked| Grayscale(checked)
-        ),
-        "Brightness:",
-        EditBox::parser(
-            |cfg: &RenderConfig| cfg.brightness,
-            |value| Brightness(value)
-        )
-        .with_width_em(3., 3.),
-        Filler::maximize().map_any()
+            "Grayscale:",
+            CheckBox::new_msg(
+                |_, cfg: &RenderConfig| cfg.grayscale,
+                |checked| Grayscale(checked)
+            ),
+        ],
+    ]
+}
+
+fn misc_panel() -> impl Widget<Data = Flame> {
+    column![
+        row![
+            "Bounds:",
+            Frame::new(grid! {
+                (0,0) => "X:",
+                (1,0) => EditBox::parser(
+                    |flame: &Flame| flame.bounds.x_min,
+                    |val| val,
+                )
+                .with_width_em(3., 3.)
+                .on_message_update_flame(|_, _, flame, val| {
+                    flame.bounds.x_min = val;
+                }),
+                (2,0) => EditBox::parser(
+                    |flame: &Flame| flame.bounds.x_max,
+                    |val| val,
+                )
+                .with_width_em(3., 3.)
+                .on_message_update_flame(|_, _, flame, val| {
+                    flame.bounds.x_max = val;
+                }),
+                (0,1) => "Y:",
+                (1,1) => EditBox::parser(
+                    |flame: &Flame| flame.bounds.y_min,
+                    |val| val,
+                )
+                .with_width_em(3., 3.)
+                .on_message_update_flame(|_, _, flame, val| {
+                    flame.bounds.y_min = val;
+                }),
+                (2,1) => EditBox::parser(
+                    |flame: &Flame| flame.bounds.y_max,
+                    |val| val,
+                )
+                .with_width_em(3., 3.)
+                .on_message_update_flame(|_, _, flame, val| {
+                    flame.bounds.y_max = val;
+                }),
+            }),
+        ],
+        row![
+            "Symmetry:",
+            EditBox::parser(|flame: &Flame| flame.symmetry, |val| val)
+                .with_width_em(3., 3.)
+                .on_message_update_flame(|_, _, flame, val| {
+                    flame.symmetry = val;
+                })
+        ]
     ]
 }
 
 fn image_widget() -> impl Widget<Data = AppData> {
     Sprite::new()
-        .with_logical_size((300., 300.))
+        .with_logical_size((500., 500.))
         .with_stretch(Stretch::Maximize)
         .map_any()
         .on_configure(|cx, widget| {
@@ -338,6 +409,7 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
                 *key = val;
             }
         }),
+        Filler::maximize().map_any(),
         MarkButton::new_msg(MarkStyle::X, "delete", ListRemove(index)).map_any()
     ];
 
@@ -371,7 +443,7 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
         }),
     ];
 
-    column![top, bottom]
+    Frame::new(column![top, bottom])
 }
 
 fn color_list() -> impl Widget<Data = Flame> {
@@ -396,6 +468,34 @@ fn color_list() -> impl Widget<Data = Flame> {
             }),
         Filler::maximize().map_any()
     ])
+}
+
+fn file_bar() -> impl Widget<Data = ()> {
+    row![
+        Filler::maximize(),
+        Button::label_msg("Save", ()).on_messages(|cx, widget, _| {
+            if let Some(()) = cx.try_pop() {
+                cx.send_spawn(widget.id(), async {
+                    let file = rfd::AsyncFileDialog::new()
+                        .add_filter("Flame File", &["json", "yaml"])
+                        .save_file()
+                        .await;
+                    SaveFileTo(file)
+                });
+            }
+        }),
+        Button::label_msg("Load", ()).on_messages(|cx, widget, _| {
+            if let Some(()) = cx.try_pop() {
+                cx.send_spawn(widget.id(), async {
+                    let file = rfd::AsyncFileDialog::new()
+                        .add_filter("Flame File", &["json", "yaml"])
+                        .pick_file()
+                        .await;
+                    LoadFileFrom(file)
+                });
+            }
+        }),
+    ]
 }
 
 fn main() -> kas::runner::Result<()> {
@@ -426,9 +526,10 @@ fn main() -> kas::runner::Result<()> {
     let proxy = app.create_proxy();
     thread::spawn(move || generate_flame(flame_rx, config_rx, proxy));
 
-    let config_box = render_config_widget()
-        .map(|data: &AppData| &data.config)
-        .with_stretch(None, Some(Stretch::None));
+    let config_box = render_config_panel().map(|data: &AppData| &data.config);
+    // .with_stretch(None, Some(Stretch::None));
+
+    let misc_box = misc_panel().map(|data: &AppData| &data.flame);
 
     let image = image_widget();
 
@@ -440,9 +541,11 @@ fn main() -> kas::runner::Result<()> {
         .map(|data: &AppData| &data.flame)
         .with_margin_style(MarginStyle::Large);
 
+    let left_column = column![config_box, misc_box, Separator::new(), palette_editor];
+
     let root = column![
-        Splitter::right(collection![palette_editor, image, function_editor]),
-        config_box
+        Splitter::right(collection![left_column, image, function_editor]),
+        file_bar().map_any()
     ];
 
     app.with(Window::new(root, "Flame Editor")).run()
