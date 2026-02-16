@@ -26,6 +26,10 @@ use flame::{
     variation::{VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant},
 };
 
+// const DEFAULT_FUNCTION: FunctionEntry = FunctionEntry {
+//     function: Function { }
+// };
+
 const ITERS_PER_LOOP: usize = 100_000;
 const MAX_ITERS: usize = 1_000_000_000;
 const IDLE_SLEEP_DUR: Duration = Duration::from_millis(30);
@@ -320,55 +324,95 @@ impl<T: Widget<Data = Flame> + Sized> FlameAdaptWidget for T {}
 
 fn function_entry(index: usize) -> impl Widget<Data = Flame> {
     let affine_pre = affine()
-        .map(move |flame: &Flame| &flame.functions[index].function.affine_pre)
+        .map(move |flame: &Flame| {
+            &flame
+                .functions
+                .get(index)
+                .unwrap_or(&flame.functions[0])
+                .function
+                .affine_pre
+        })
         .on_message_update_flame(move |_, _, flame, affine: Affine2<f32>| {
-            flame.functions[index].function.affine_pre = affine
+            if let Some(entry) = flame.functions.get_mut(index) {
+                entry.function.affine_pre = affine;
+            }
         });
 
     let affine_post = affine()
-        .map(move |flame: &Flame| &flame.functions[index].function.affine_post)
+        .map(move |flame: &Flame| {
+            &flame
+                .functions
+                .get(index)
+                .unwrap_or(&flame.functions[0])
+                .function
+                .affine_post
+        })
         .on_message_update_flame(move |_, _, flame, affine: Affine2<f32>| {
-            flame.functions[index].function.affine_post = affine
+            if let Some(entry) = flame.functions.get_mut(index) {
+                entry.function.affine_post = affine;
+            }
         });
 
     let variation = ComboBox::new_msg(
         VARIATION_DISCRIMINANTS
             .iter()
             .map(|v| (format!("{v:?}"), v.clone())),
-        move |_, flame: &Flame| flame.functions[index].function.variation.into(),
+        move |_, flame: &Flame| {
+            flame
+                .functions
+                .get(index)
+                .unwrap_or(&flame.functions[0])
+                .function
+                .variation
+                .into()
+        },
         |v| v,
     )
     .on_message_update_flame(move |_, _, flame, discr: VariationDiscriminant| {
         let var = Variation::build(discr, vec![0.0; discr.num_parameters()]).unwrap();
-        flame.functions[index].function.variation = var;
+        if let Some(entry) = flame.functions.get_mut(index) {
+            entry.function.variation = var;
+        };
     });
 
     Frame::new(Grid::new(cell_collection! {
         (0, 0) => "Weight:",
         (1, 0) => SpinBox::new_msg(
             0.0..=1.0,
-            move |_, flame: &Flame| flame.functions[index].weight,
+            move |_, flame: &Flame| flame.functions.get(index).unwrap_or(&flame.functions[0]).weight,
             |v| v
         ).with_step(0.1)
         .with_width_em(1.0, 1.5)
-        .on_message_update_flame(move |_, _, flame, weight: f32| flame.functions[index].weight = weight),
+        .on_message_update_flame(move |_, _, flame, weight: f32| {
+             if let Some(entry) = flame.functions.get_mut(index) {
+                 entry.weight = weight;
+            }
+        }),
         (0..=1, 1) => variation,
         (4, 0) => "Color:",
         (5, 0) => SpinBox::new_msg(
             0.0..=1.0,
-            move |_, flame: &Flame| flame.functions[index].color,
+            move |_, flame: &Flame| flame.functions.get(index).unwrap_or(&flame.functions[0]).color,
             |v| v
         ).with_step(0.1)
         .with_width_em(1.0, 1.5)
-        .on_message_update_flame(move |_, _, flame, val: f32| flame.functions[index].color = val),
+        .on_message_update_flame(move |_, _, flame, val: f32| {
+             if let Some(entry) = flame.functions.get_mut(index) {
+                 entry.color = val;
+            }
+        }),
         (4, 1) => "Speed:",
         (5, 1) => SpinBox::new_msg(
             0.0..=1.0,
-            move |_, flame: &Flame| flame.functions[index].color_speed,
+            move |_, flame: &Flame| flame.functions.get(index).unwrap_or(&flame.functions[0]).color_speed,
             |v| v
         ).with_step(0.1)
         .with_width_em(1.0, 1.5)
-        .on_message_update_flame(move |_, _, flame, val: f32| flame.functions[index].color_speed = val),
+        .on_message_update_flame(move |_, _, flame, val: f32| {
+             if let Some(entry) = flame.functions.get_mut(index) {
+                 entry.color_speed = val;
+            }
+        }),
         (2, 0..=1) => Frame::new(affine_pre),
         (3, 0..=1) => Frame::new(affine_post),
         (6, 0..=1) => MarkButton::new_msg(MarkStyle::X, "delete", ListRemove(index)).map_any(),
@@ -401,9 +445,10 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
     let top = row![
         "Key:",
         EditBox::parser(
-            move |flame: &Flame| flame.palette.get(index).unwrap().1,
+            move |flame: &Flame| flame.palette.get(index).unwrap_or_default().1,
             |val| val
         )
+        .with_width_em(3., 3.)
         .on_message_update_flame(move |_, _, flame, val: f32| {
             if let Some(key) = flame.palette.get_mut(index).1 {
                 *key = val;
@@ -411,35 +456,42 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
         }),
         Filler::maximize().map_any(),
         MarkButton::new_msg(MarkStyle::X, "delete", ListRemove(index)).map_any()
-    ];
+    ]
+    .with_stretch(None, Stretch::None);
 
     let bottom = row![
         "R:",
         EditBox::parser(
-            move |flame: &Flame| flame.palette.get(index).unwrap().0.red,
+            move |flame: &Flame| flame.palette.get(index).unwrap_or_default().0.red,
             |val| val
         )
         .with_width_em(3., 3.)
         .on_message_update_flame(move |_, _, flame, val: u8| {
-            flame.palette.get_mut(index).0.unwrap().red = val;
+            if let Some(color) = flame.palette.get_mut(index).0 {
+                color.red = val;
+            }
         }),
         "G:",
         EditBox::parser(
-            move |flame: &Flame| flame.palette.get(index).unwrap().0.green,
+            move |flame: &Flame| flame.palette.get(index).unwrap_or_default().0.green,
             |val| val
         )
         .with_width_em(3., 3.)
         .on_message_update_flame(move |_, _, flame, val: u8| {
-            flame.palette.get_mut(index).0.unwrap().green = val;
+            if let Some(color) = flame.palette.get_mut(index).0 {
+                color.green = val;
+            }
         }),
         "B:",
         EditBox::parser(
-            move |flame: &Flame| flame.palette.get(index).unwrap().0.blue,
+            move |flame: &Flame| flame.palette.get(index).unwrap_or_default().0.blue,
             |val| val
         )
         .with_width_em(3., 3.)
         .on_message_update_flame(move |_, _, flame, val: u8| {
-            flame.palette.get_mut(index).0.unwrap().blue = val;
+            if let Some(color) = flame.palette.get_mut(index).0 {
+                color.blue = val;
+            }
         }),
     ];
 
@@ -496,6 +548,7 @@ fn file_bar() -> impl Widget<Data = ()> {
             }
         }),
     ]
+    .with_stretch(None, Stretch::None)
 }
 
 fn main() -> kas::runner::Result<()> {
