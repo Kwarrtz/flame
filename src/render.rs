@@ -4,7 +4,7 @@ use num_traits::{Bounded, Float, Num, NumAssign, NumCast, ToPrimitive, clamp, on
 use super::bucket::*;
 use super::buffer::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct RenderConfig {
     pub brightness: f64,
     pub width: usize,

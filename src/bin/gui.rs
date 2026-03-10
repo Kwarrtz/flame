@@ -11,24 +11,13 @@ use kas::{
 };
 use nalgebra::Affine2;
 use std::{
-    fmt::Debug,
-    sync::mpsc::{Receiver, Sender, channel},
-    thread,
-    time::Duration,
+    fmt::Debug, ops::RangeInclusive, sync::mpsc::{Receiver, Sender, channel}, thread, time::Duration
 };
+use rand::{Rng, distr::Distribution};
 
 use flame::{
-    self, Flame, RenderConfig,
-    bounds::Bounds,
-    buffer::Buffer,
-    color::{Color, Palette},
-    function::FunctionEntry,
-    variation::{VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant},
+    self, Flame, RenderConfig, bounds::Bounds, buffer::Buffer, color::{Color, Palette}, function::FunctionEntry, random::{AffineDistribution, PaletteDistribution}, variation::{VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant}
 };
-
-// const DEFAULT_FUNCTION: FunctionEntry = FunctionEntry {
-//     function: Function { }
-// };
 
 const ITERS_PER_LOOP: usize = 100_000;
 const MAX_ITERS: usize = 1_000_000_000;
@@ -40,6 +29,13 @@ const DEFAULT_RENDER_CONFIG: RenderConfig = RenderConfig {
     brightness: 20.,
     grayscale: false,
 };
+
+const AFFINE_DISTR: AffineDistribution = AffineDistribution {
+    uniformity: 0.7,
+    skewness: 0.4,
+};
+
+const PALETTE_DISTR: PaletteDistribution<RangeInclusive<usize>> = PaletteDistribution(3..=7);
 
 #[derive(Debug)]
 struct NewImage(Size, Vec<u8>);
@@ -106,17 +102,6 @@ fn generate_flame(
 }
 
 #[derive(Debug)]
-enum RenderConfigUpdate {
-    Width(usize),
-    Height(usize),
-    Grayscale(bool),
-    Brightness(f64),
-}
-
-#[derive(Debug)]
-struct FlameUpdate(Flame);
-
-#[derive(Debug)]
 struct SaveFileTo(Option<rfd::FileHandle>);
 
 #[derive(Debug)]
@@ -131,19 +116,12 @@ struct AppData {
 
 impl kas::runner::AppData for AppData {
     fn handle_message(&mut self, messages: &mut impl kas::runner::ReadMessage) {
-        if let Some(msg) = messages.try_pop::<RenderConfigUpdate>() {
-            use RenderConfigUpdate::*;
-            match msg {
-                Width(w) => self.config.width = w,
-                Height(h) => self.config.height = h,
-                Grayscale(gs) => self.config.grayscale = gs,
-                Brightness(b) => self.config.brightness = b,
-            }
-
+        if let Some(new_config) = messages.try_pop::<RenderConfig>() {
+            self.config = new_config;
             self.config_tx.send(self.config.clone()).unwrap();
         }
 
-        if let Some(FlameUpdate(new_flame)) = messages.try_pop()
+        if let Some(new_flame) = messages.try_pop::<Flame>()
             && self.flame != new_flame
         {
             self.flame = new_flame;
@@ -162,28 +140,31 @@ impl kas::runner::AppData for AppData {
 }
 
 fn render_config_panel() -> impl Widget<Data = RenderConfig> {
-    use RenderConfigUpdate::*;
     column![
         row![
             "Width:",
-            EditBox::parser(|cfg: &RenderConfig| cfg.width, |value| Width(value))
-                .with_width_em(3., 3.),
+            EditBox::parser(|cfg: &RenderConfig| cfg.width, |value| value)
+                .with_width_em(3., 3.)
+                .on_message_update(|_, _, cfg: &mut RenderConfig, val: usize| { cfg.width = val; }),
             "Height:",
-            EditBox::parser(|cfg: &RenderConfig| cfg.height, |value| Height(value))
-                .with_width_em(3., 3.),
+            EditBox::parser(|cfg: &RenderConfig| cfg.height, |value| value)
+                .with_width_em(3., 3.)
+                .on_message_update(|_, _, cfg, val: usize| cfg.height = val),
         ],
         row![
             "Brightness:",
             EditBox::parser(
                 |cfg: &RenderConfig| cfg.brightness,
-                |value| Brightness(value)
+                |value| value
             )
-            .with_width_em(3., 3.),
+            .with_width_em(3., 3.)
+            .on_message_update(|_, _, cfg, val: f64| cfg.brightness = val),
             "Grayscale:",
             CheckBox::new_msg(
                 |_, cfg: &RenderConfig| cfg.grayscale,
-                |checked| Grayscale(checked)
-            ),
+                |checked| checked
+            )
+            .on_message_update(|_, _, cfg, checked: bool| cfg.grayscale = checked),
         ],
     ]
 }
@@ -199,7 +180,7 @@ fn misc_panel() -> impl Widget<Data = Flame> {
                     |val| val,
                 )
                 .with_width_em(3., 3.)
-                .on_message_update_flame(|_, _, flame, val| {
+                .on_message_update(|_, _, flame, val| {
                     flame.bounds.x_min = val;
                 }),
                 (2,0) => EditBox::parser(
@@ -207,7 +188,7 @@ fn misc_panel() -> impl Widget<Data = Flame> {
                     |val| val,
                 )
                 .with_width_em(3., 3.)
-                .on_message_update_flame(|_, _, flame, val| {
+                .on_message_update(|_, _, flame, val| {
                     flame.bounds.x_max = val;
                 }),
                 (0,1) => "Y:",
@@ -216,7 +197,7 @@ fn misc_panel() -> impl Widget<Data = Flame> {
                     |val| val,
                 )
                 .with_width_em(3., 3.)
-                .on_message_update_flame(|_, _, flame, val| {
+                .on_message_update(|_, _, flame, val| {
                     flame.bounds.y_min = val;
                 }),
                 (2,1) => EditBox::parser(
@@ -224,7 +205,7 @@ fn misc_panel() -> impl Widget<Data = Flame> {
                     |val| val,
                 )
                 .with_width_em(3., 3.)
-                .on_message_update_flame(|_, _, flame, val| {
+                .on_message_update(|_, _, flame, val| {
                     flame.bounds.y_max = val;
                 }),
             }),
@@ -233,7 +214,7 @@ fn misc_panel() -> impl Widget<Data = Flame> {
             "Symmetry:",
             EditBox::parser(|flame: &Flame| flame.symmetry, |val| val)
                 .with_width_em(3., 3.)
-                .on_message_update_flame(|_, _, flame, val| {
+                .on_message_update(|_, _, flame, val| {
                     flame.symmetry = val;
                 })
         ]
@@ -275,16 +256,17 @@ struct ListAdd;
 #[derive(Debug, Clone)]
 struct ListRemove(usize);
 
-trait FlameAdaptWidget: Widget<Data = Flame> + Sized {
-    fn on_message_update_flame<T: Debug + 'static>(
+trait UpdateAdaptWidget: Widget + Sized
+where <Self as Widget>::Data: Clone + Debug + 'static {
+    fn on_message_update<T: Debug + 'static>(
         self,
-        f: impl Fn(&mut AdaptEventCx, &mut Self, &mut Flame, T) + 'static,
-    ) -> impl Widget<Data = Flame> {
-        self.on_messages(move |cx, widget, flame: &Flame| {
+        f: impl Fn(&mut AdaptEventCx, &mut Self, &mut <Self as Widget>::Data, T) + 'static,
+    ) -> impl Widget<Data = <Self as Widget>::Data> {
+        self.on_messages(move |cx, widget, data| {
             if let Some(val) = cx.try_pop::<T>() {
-                let mut new = flame.clone();
+                let mut new = data.clone();
                 f(cx, widget, &mut new, val);
-                cx.push(FlameUpdate(new));
+                cx.push(new);
             }
         })
     }
@@ -296,17 +278,18 @@ fn affine_field(index: (usize, usize)) -> impl Widget<Data = Affine2<f32>> {
         |val| val,
     )
     .with_width_em(1., 1.5)
-    .on_messages(move |cx, _, affine: &Affine2<f32>| {
-        if let Some(val) = cx.try_pop::<f32>() {
-            let mut new = affine.clone();
-            new.matrix_mut_unchecked()[index] = val;
-            cx.push(new);
-        }
-    })
+    // .on_messages(move |cx, _, affine: &Affine2<f32>| {
+    //     if let Some(val) = cx.try_pop::<f32>() {
+    //         let mut new = affine.clone();
+    //         new.matrix_mut_unchecked()[index] = val;
+    //         cx.push(new);
+    //     }
+    // })
+    .on_message_update(move |_, _, affine, val: f32| affine.matrix_mut_unchecked()[index] = val)
 }
 
 fn affine() -> impl Widget<Data = Affine2<f32>> {
-    grid! {
+    let fields = grid! {
         (0, 0) => affine_field((0, 0)),
         (1, 0) => affine_field((0, 1)),
         (0, 1) => affine_field((1, 0)),
@@ -317,10 +300,16 @@ fn affine() -> impl Widget<Data = Affine2<f32>> {
     .align(AlignHints {
         horiz: None,
         vert: Some(Align::Center),
-    })
+    });
+
+    let randomize = Button::label("R").with(|cx, _| {
+        cx.push(AFFINE_DISTR.sample(&mut rand::rng()));
+    });
+
+    row![Frame::new(fields), randomize.map_any()]
 }
 
-impl<T: Widget<Data = Flame> + Sized> FlameAdaptWidget for T {}
+impl<T: Widget + Sized> UpdateAdaptWidget for T where <T as Widget>::Data: Clone + Debug + 'static {}
 
 fn function_entry(index: usize) -> impl Widget<Data = Flame> {
     let affine_pre = affine()
@@ -332,7 +321,7 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
                 .function
                 .affine_pre
         })
-        .on_message_update_flame(move |_, _, flame, affine: Affine2<f32>| {
+        .on_message_update(move |_, _, flame, affine: Affine2<f32>| {
             if let Some(entry) = flame.functions.get_mut(index) {
                 entry.function.affine_pre = affine;
             }
@@ -347,7 +336,7 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
                 .function
                 .affine_post
         })
-        .on_message_update_flame(move |_, _, flame, affine: Affine2<f32>| {
+        .on_message_update(move |_, _, flame, affine: Affine2<f32>| {
             if let Some(entry) = flame.functions.get_mut(index) {
                 entry.function.affine_post = affine;
             }
@@ -368,7 +357,7 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
         },
         |v| v,
     )
-    .on_message_update_flame(move |_, _, flame, discr: VariationDiscriminant| {
+    .on_message_update(move |_, _, flame, discr: VariationDiscriminant| {
         let var = Variation::build(discr, vec![0.0; discr.num_parameters()]).unwrap();
         if let Some(entry) = flame.functions.get_mut(index) {
             entry.function.variation = var;
@@ -383,7 +372,7 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
             |v| v
         ).with_step(0.1)
         .with_width_em(1.0, 1.5)
-        .on_message_update_flame(move |_, _, flame, weight: f32| {
+        .on_message_update(move |_, _, flame, weight: f32| {
              if let Some(entry) = flame.functions.get_mut(index) {
                  entry.weight = weight;
             }
@@ -396,7 +385,7 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
             |v| v
         ).with_step(0.1)
         .with_width_em(1.0, 1.5)
-        .on_message_update_flame(move |_, _, flame, val: f32| {
+        .on_message_update(move |_, _, flame, val: f32| {
              if let Some(entry) = flame.functions.get_mut(index) {
                  entry.color = val;
             }
@@ -408,13 +397,13 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
             |v| v
         ).with_step(0.1)
         .with_width_em(1.0, 1.5)
-        .on_message_update_flame(move |_, _, flame, val: f32| {
+        .on_message_update(move |_, _, flame, val: f32| {
              if let Some(entry) = flame.functions.get_mut(index) {
                  entry.color_speed = val;
             }
         }),
-        (2, 0..=1) => Frame::new(affine_pre),
-        (3, 0..=1) => Frame::new(affine_post),
+        (2, 0..=1) => affine_pre,
+        (3, 0..=1) => affine_post,
         (6, 0..=1) => MarkButton::new_msg(MarkStyle::X, "delete", ListRemove(index)).map_any(),
     }))
 }
@@ -423,7 +412,7 @@ fn function_list() -> impl Widget<Data = Flame> {
     ScrollRegion::new_clip(column![
         Button::label_msg("Add Function", ListAdd)
             .map_any()
-            .on_message_update_flame(move |_, _, flame, ListAdd| {
+            .on_message_update(move |_, _, flame: &mut Flame, ListAdd| {
                 flame.functions.push(FunctionEntry::default());
             }),
         Column::new(vec![])
@@ -433,7 +422,7 @@ fn function_list() -> impl Widget<Data = Flame> {
                     widget.resize_with(cx, flame, flame.functions.len(), function_entry);
                 }
             })
-            .on_message_update_flame(move |_, widget, flame, ListRemove(i)| {
+            .on_message_update(move |_, widget, flame, ListRemove(i)| {
                 widget.clear();
                 flame.functions.remove(i);
             }),
@@ -449,7 +438,7 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
             |val| val
         )
         .with_width_em(3., 3.)
-        .on_message_update_flame(move |_, _, flame, val: f32| {
+        .on_message_update(move |_, _, flame, val: f32| {
             if let Some(key) = flame.palette.get_mut(index).1 {
                 *key = val;
             }
@@ -466,7 +455,7 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
             |val| val
         )
         .with_width_em(3., 3.)
-        .on_message_update_flame(move |_, _, flame, val: u8| {
+        .on_message_update(move |_, _, flame, val: u8| {
             if let Some(color) = flame.palette.get_mut(index).0 {
                 color.red = val;
             }
@@ -477,7 +466,7 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
             |val| val
         )
         .with_width_em(3., 3.)
-        .on_message_update_flame(move |_, _, flame, val: u8| {
+        .on_message_update(move |_, _, flame, val: u8| {
             if let Some(color) = flame.palette.get_mut(index).0 {
                 color.green = val;
             }
@@ -488,7 +477,7 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
             |val| val
         )
         .with_width_em(3., 3.)
-        .on_message_update_flame(move |_, _, flame, val: u8| {
+        .on_message_update(move |_, _, flame, val: u8| {
             if let Some(color) = flame.palette.get_mut(index).0 {
                 color.blue = val;
             }
@@ -500,11 +489,11 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
 
 fn color_list() -> impl Widget<Data = Flame> {
     ScrollRegion::new_clip(column![
-        Button::label_msg("Add Color", ListAdd)
+        row![Button::label_msg("Add Color", ListAdd)
             .map_any()
-            .on_message_update_flame(move |_, _, flame, ListAdd| {
+            .on_message_update(move |_, _, flame: &mut Flame, ListAdd| {
                 flame.palette.add(Color::default());
-            }),
+            }), Button::label_msg("R", ()).map_any().on_message_update(|_, _, flame: &mut Flame, ()| flame.palette = PALETTE_DISTR.sample(&mut rand::rng()))],
         Column::new(vec![])
             .on_update(|cx, widget, flame: &Flame| {
                 if flame.palette.len() != widget.len() {
@@ -512,7 +501,7 @@ fn color_list() -> impl Widget<Data = Flame> {
                     widget.resize_with(cx, flame, flame.palette.len(), color_entry);
                 }
             })
-            .on_message_update_flame(move |_, widget, flame, ListRemove(i)| {
+            .on_message_update(move |_, widget, flame, ListRemove(i)| {
                 widget.clear();
                 if flame.palette.len() > 2 {
                     flame.palette.remove(i);
