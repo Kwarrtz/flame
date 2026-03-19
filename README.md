@@ -4,14 +4,17 @@ This is a Rust implementation of the fractal flame algorithm for generating colo
 
 ![Sample fractal flame](https://github.com/Kwarrtz/flame/blob/master/examples/1.png)
 
-Most of the features described in the paper are supported. Symmetry, density estimation and some of the variations in the appendix remain to be implemented.
+Most of the features described in the paper are supported. Density estimation and some of the variations in the appendix remain to be implemented, and there is currently no intention to support any kind of animation.
 
-This is a personal project for educational purposes. It is currently highly unstable and not intended for public use. If you actually want to experiment with creating your own fractal flames, I'd instead suggest checking out one of the pieces of software linked to on [the official flame website](https://flam3.com). All credit for the algorithm implemented here goes to Scott Draves and his colleagues.
+This is a personal project for educational purposes. If you actually want to experiment with creating your own fractal flames, I'd instead suggest checking out one of the pieces of software linked to on [the official flame website](https://flam3.com). All credit for the algorithm implemented here goes to Scott Draves and his colleagues.
 
 ## Command-line interface
 
-The primary executable in this crate is `cli`, which renders flames from a specification file in either YAML or JSON format. The specification used to generate the image above can be found in the `examples` folder. For usage of the command-line tool and a description of the various rendering options, see the `--help` flag.
+The primary executable in this crate is `cli`, which has two subcommands.
+* `render`: Renders a flame from a specification file in either YAML or JSON format. The specification used to generate the image above can be found in the `examples` folder.
+* `rand-gen`: Generates a specified number of flame specification files at random, along with preview renders.
+For detailed usage and a description of the various rendering options, use the `--help` flag.
 
 ## Graphical interface
 
-There is also a graphical editor implemented in the `gui` executable, using the same rendering backend. Currently, all it does is allow for a continuous live preview as you edit a YAML flame specification, in the same format as used by the command-line utility.
+There is also a graphical editor implemented in the `gui` executable, using the same rendering backend. It can open and save flame specification files in the same format as used by the CLI and provides a graphical editor for the main data with a live preview.

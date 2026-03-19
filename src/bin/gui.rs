@@ -13,7 +13,7 @@ use nalgebra::Affine2;
 use std::{
     fmt::Debug, ops::RangeInclusive, sync::mpsc::{Receiver, Sender, channel}, thread, time::Duration
 };
-use rand::{Rng, distr::Distribution};
+use rand::distr::Distribution;
 
 use flame::{
     self, Flame, RenderConfig, bounds::Bounds, buffer::Buffer, color::{Color, Palette}, function::FunctionEntry, random::{AffineDistribution, PaletteDistribution}, variation::{VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant}
