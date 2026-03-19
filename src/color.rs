@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::error::PaletteError;
 // use super::file::RgbSource;
 
+/// An RGB color with 8-bit depth
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "self::_serde::RgbSource", into = "self::_serde::RgbSource")]
 pub struct Color {
@@ -26,6 +27,7 @@ impl Color {
         blue: 255,
     };
 
+    /// Linearly interpolate between `start` and `end` in RGB space
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
         Color {
             red: lerp(start.red, end.red, t),
@@ -41,6 +43,8 @@ impl Default for Color {
     }
 }
 
+/// A continuous color palette, defined by linearly interpolating between
+/// key `Color`s at specified points
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "self::_serde::PaletteSource",
@@ -52,6 +56,12 @@ pub struct Palette {
 }
 
 impl Palette {
+    /// Generate a new palette from an iterator of key `Color`s
+    ///
+    /// If `keys` is `None` the colors will be evenly spaced. Otherwise,
+    /// it must be a weakly monotonically increasing list of numbers between
+    /// 0 and 1 of length exactly two less than `colors`, specifying the positions
+    /// of the non-endpoint `Color`s.
     pub fn new<I>(
         colors: impl IntoIterator<Item = Color>,
         keys: Option<I>,
@@ -94,6 +104,7 @@ impl Palette {
         })
     }
 
+    /// Sample the `Color` at point `c` along the `Palette`
     pub fn sample(&self, c: f32) -> Option<Color> {
         if c < 0.0 || c > 1.0 {
             return None;
@@ -111,11 +122,20 @@ impl Palette {
         Some(Color::lerp(self.colors[i], self.colors[i + 1], t))
     }
 
+    /// Add a new `Color` to the end of the `Palette`
+    ///
+    /// The formerly terminal `Color` will be given a key of 1.0, so the new
+    /// `Color` will no affect on the final output until key values are adjusted.
     pub fn add(&mut self, color: Color) {
         self.colors.insert(self.colors.len() - 1, color);
         self.keys.push(1.0);
     }
 
+    /// Remove the `Color` at the specified position
+    ///
+    /// Panics if `index >= self.len()` or if `self.len() <= 2`. If an endpoint
+    /// color is removed, the nearest color will replace it, with all other keys left
+    /// unchanged.
     pub fn remove(&mut self, index: usize) {
         if index >= self.len() {
             panic!("index out of bounds");
@@ -136,6 +156,7 @@ impl Palette {
         self.colors.remove(index);
     }
 
+    /// The number of `Color`s in the `Palette`
     pub fn len(&self) -> usize {
         self.colors.len()
     }

@@ -1,6 +1,7 @@
-use serde::{Serialize,Deserialize};
 use nalgebra::{Affine2, Matrix3, Point2, Transform};
+use serde::{Deserialize, Serialize};
 
+/// Screen bounds
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Bounds {
     pub x_min: f32,
@@ -11,7 +12,12 @@ pub struct Bounds {
 
 impl Bounds {
     pub fn new(x_min: f32, x_max: f32, y_min: f32, y_max: f32) -> Self {
-        Bounds { x_min, x_max, y_min, y_max }
+        Bounds {
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+        }
     }
 
     pub fn contains(&self, p: &Point2<f32>) -> bool {
@@ -28,9 +34,12 @@ impl Bounds {
         self.y_max - self.y_min
     }
 
+    /// Affine transformation to convert from original coordinates to screen space coordinates,
+    /// given the screen `width` and `height` in pixels
+    #[rustfmt::skip]
     pub fn screen_transform(&self, width: usize, height: usize) -> Affine2<f32> {
         let w_scale = (width - 1) as f32 / self.width();
-        let h_scale =  (height - 1) as f32 / self.height();
+        let h_scale = (height - 1) as f32 / self.height();
         Transform::from_matrix_unchecked(Matrix3::new(
             w_scale, 0., -self.x_min * w_scale,
             0., -h_scale, self.y_max * h_scale,
@@ -42,8 +51,10 @@ impl Bounds {
 impl Default for Bounds {
     fn default() -> Bounds {
         Bounds {
-            x_min: -1., x_max: 1.,
-            y_min: -1., y_max: 1.
+            x_min: -1.,
+            x_max: 1.,
+            y_min: -1.,
+            y_max: 1.,
         }
     }
 }

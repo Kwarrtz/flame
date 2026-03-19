@@ -3,6 +3,7 @@ use num_traits::{NumAssign, NumCast, ToPrimitive};
 
 use super::bucket::*;
 
+/// A two-dimensional array of `Bucket`s
 #[derive(Debug, Clone)]
 pub struct Buffer<T> {
     pub width: usize,
@@ -19,11 +20,19 @@ impl<T: Copy> Buffer<T> {
         &mut self.buckets[x + y * self.width]
     }
 
+    /// Get the bucket at a `Point`, i.e., rounding its components
+    /// down to the nearest integer
     pub fn at_mut(&mut self, p: Point2<f32>) -> &mut Bucket<T> {
         self.get_mut(p[0] as usize, p[1] as usize)
     }
 
-    pub fn from_func(width: usize, height: usize, mut f: impl FnMut(usize, usize) -> Bucket<T>) -> Self {
+    /// Generate a `Buffer` of a certain width and height, populated according to
+    /// `buffer.get(x,y) == f(x, y)`
+    pub fn from_func(
+        width: usize,
+        height: usize,
+        mut f: impl FnMut(usize, usize) -> Bucket<T>,
+    ) -> Self {
         let mut buckets = Vec::with_capacity(width * height);
         for y in 0..height {
             for x in 0..width {
@@ -62,6 +71,8 @@ impl<T: NumAssign + Copy> Buffer<T> {
         }
     }
 
+    /// Accumulate an iterator of `Buffer`s of the same dimensions,
+    /// summing their `Bucket`s
     pub fn combine(buffers: impl IntoIterator<Item = Self>) -> Self {
         let mut buffers_iter = buffers.into_iter();
         let mut combined = buffers_iter

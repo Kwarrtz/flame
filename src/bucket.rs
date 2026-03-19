@@ -1,7 +1,10 @@
 use std::ops::{AddAssign, MulAssign};
 
-use num_traits::{zero, Float, Zero};
+use num_traits::{Float, Zero, zero};
 
+/// A single bucket of RGBA data. Essentially a pixel, but can contain
+/// arbitrary (though generally numeric) data types, and is not necessarily
+/// meant to be rendered directly as an image.
 #[derive(Debug, Clone, Copy)]
 pub struct Bucket<T> {
     pub alpha: T,
@@ -58,10 +61,12 @@ impl<'a, T> Iterator for BucketIterMut<'a, T> {
 }
 
 impl<T> Bucket<T> {
+    /// Iterator over RGB channels
     pub fn iter_rgb<'a>(&'a self) -> BucketIter<'a, T> {
         BucketIter { bucket: self, i: 1 }
     }
 
+    /// Mutable iterator over RGB channels
     pub fn iter_rgb_mut<'a>(&'a mut self) -> BucketIterMut<'a, T> {
         // BucketIterMut { bucket: self, i: 1 }
         BucketIterMut {
@@ -72,10 +77,12 @@ impl<T> Bucket<T> {
         }
     }
 
+    /// Iterator over all channels in ARGB order
     pub fn iter_argb<'a>(&'a self) -> BucketIter<'a, T> {
         BucketIter { bucket: self, i: 0 }
     }
 
+    /// Mutable iterator over all channels in ARGB order
     pub fn iter_argb_mut<'a>(&'a mut self) -> BucketIterMut<'a, T> {
         // BucketIterMut { bucket: self, i: 0 }
         BucketIterMut {
@@ -86,6 +93,7 @@ impl<T> Bucket<T> {
         }
     }
 
+    /// Construct `Bucket` from an iterator, using the first four elements in ARGB order
     pub fn from_argb(mut iter: impl Iterator<Item = T>) -> Option<Bucket<T>> {
         Some(Bucket {
             alpha: iter.next()?,
@@ -95,6 +103,7 @@ impl<T> Bucket<T> {
         })
     }
 
+    /// Map function over all channels
     pub fn map<S>(self, mut f: impl FnMut(T) -> S) -> Bucket<S> {
         Bucket {
             alpha: f(self.alpha),
