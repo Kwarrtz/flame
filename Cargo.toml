@@ -24,7 +24,8 @@ thiserror = "2.0.17"
 async-channel = "2.5"
 flame_macro = { path = "./flame_macro" }
 rfd = "0.17"
+xilem = { git = "https://github.com/linebender/xilem", rev = "7b2e2738ad83021411ca9dbd0d5bc468316306c0" }
 
-[dependencies.kas]
-version = "0.17"
-features = ["image", "canvas"]
+# [dependencies.kas]
+# version = "0.17"
+# features = ["image", "canvas"]

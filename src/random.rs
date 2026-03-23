@@ -1,7 +1,7 @@
 use std::f32::consts::TAU;
 
 use nalgebra::{Affine2, Matrix3, Rotation2, Similarity2, Transform, Vector2};
-use rand::{distr::{uniform::SampleRange, Distribution, StandardUniform}, seq::IndexedRandom, Rng};
+use rand::{distr::{uniform::{SampleRange, Uniform}, Distribution, StandardUniform}, seq::IndexedRandom, Rng};
 
 use crate::bounds::Bounds;
 
@@ -123,6 +123,28 @@ pub struct FlameDistribution<DF,DS,DN,DP> {
     pub symmetry_distr: DS,
     pub func_num_distr: DN,
     pub palette_distr: DP
+}
+
+/// The default concrete `FlameDistribution` type, matching the defaults used in the CLI.
+pub type DefaultFlameDistribution = FlameDistribution<
+    FunctionDistribution<AffineDistribution, VariationDistribution<StandardUniform>>,
+    Uniform<i8>,
+    Uniform<usize>,
+    PaletteDistribution<std::ops::RangeInclusive<usize>>,
+>;
+
+impl Default for DefaultFlameDistribution {
+    fn default() -> Self {
+        FlameDistribution {
+            func_distr: FunctionDistribution {
+                aff_distr: AffineDistribution { uniformity: 0.5, skewness: 0.5 },
+                var_distr: VariationDistribution(StandardUniform),
+            },
+            symmetry_distr: Uniform::try_from(1i8..=1i8).unwrap(),
+            func_num_distr: Uniform::try_from(4usize..=7usize).unwrap(),
+            palette_distr: PaletteDistribution(3..=7),
+        }
+    }
 }
 
 impl<DF,DS,DN,DP> Distribution<Flame> for FlameDistribution<DF,DS,DN,DP>

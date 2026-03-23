@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use nalgebra::{Affine2, Matrix3, Transform};
-use rand::{Rng, distr::Distribution, distr::weighted::WeightedIndex, seq::SliceRandom};
+use rand::{distr::Distribution, distr::weighted::WeightedIndex, seq::SliceRandom, Rng};
 use rand_distr::Normal;
 
 use super::{
@@ -14,6 +14,7 @@ use super::{
 };
 
 /// Configuration for the genetic flame evolution algorithm
+#[derive(Clone)]
 pub struct EvolveConfig<DF, DS, DN, DP> {
     pub flame_distr: FlameDistribution<DF, DS, DN, DP>,
 
@@ -42,16 +43,14 @@ pub struct EvolveConfig<DF, DS, DN, DP> {
 }
 
 /// Generate an initial random population
-pub fn evolve_init<DF, DS, DN, DP>(
-    cfg: &EvolveConfig<DF, DS, DN, DP>,
-    rng: &mut impl Rng,
-) -> Vec<Flame>
+pub fn evolve_init<DF, DS, DN, DP>(cfg: &EvolveConfig<DF, DS, DN, DP>) -> Vec<Flame>
 where
     DF: Distribution<FunctionEntry>,
     DS: Distribution<i8>,
     DN: Distribution<usize>,
     DP: Distribution<Palette>,
 {
+    let mut rng = rand::rng();
     (0..cfg.pop_size)
         .map(|_| rng.sample(&cfg.flame_distr))
         .collect()
@@ -60,20 +59,19 @@ where
 /// Produce the next generation from the previous one and a set of fit individual indices
 pub fn evolve_step<DF, DS, DN, DP>(
     prev_gen: Vec<Flame>,
-    fit: Vec<usize>,
+    fit: HashSet<usize>,
     cfg: &EvolveConfig<DF, DS, DN, DP>,
-    rng: &mut impl Rng,
 ) -> Vec<Flame>
 where
     DF: Distribution<FunctionEntry> + Distribution<Function>,
     DS: Distribution<i8>,
 {
-    let fit_set: HashSet<usize> = fit.into_iter().collect();
+    let mut rng = rand::rng();
     let fit_w = cfg.fitness_weight / (1.0 + cfg.fitness_weight);
     let unfit_w = 1.0 / (1.0 + cfg.fitness_weight);
 
     let weights: Vec<f32> = (0..prev_gen.len())
-        .map(|i| if fit_set.contains(&i) { fit_w } else { unfit_w })
+        .map(|i| if fit.contains(&i) { fit_w } else { unfit_w })
         .collect();
     let weighted = WeightedIndex::new(&weights).expect("population must be non-empty");
 
@@ -82,13 +80,13 @@ where
     (0..cfg.pop_size)
         .map(|_| {
             let mut offspring = if rng.random::<f32>() < p_clone {
-                prev_gen[weighted.sample(rng)].clone()
+                prev_gen[weighted.sample(&mut rng)].clone()
             } else {
-                let a = &prev_gen[weighted.sample(rng)];
-                let b = &prev_gen[weighted.sample(rng)];
-                recombine(a, b, rng)
+                let a = &prev_gen[weighted.sample(&mut rng)];
+                let b = &prev_gen[weighted.sample(&mut rng)];
+                recombine(a, b, &mut rng)
             };
-            mutate(&mut offspring, cfg, rng);
+            mutate(&mut offspring, cfg, &mut rng);
             offspring
         })
         .collect()

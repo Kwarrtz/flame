@@ -119,9 +119,10 @@ impl Flame {
                 _ => unreachable!(),
             }
 
-            if i > 20 && self.bounds.contains(&point) {
+            let real_point = self.last.eval(rng, point);
+            if i > 20 && self.bounds.contains(&real_point) {
                 // calculate point in screen space and find corresponding bucket
-                let screen_point = trans * self.last.eval(rng, point);
+                let screen_point = trans * real_point;
                 let bucket = buffer.at_mut(screen_point);
 
                 // get color corresponding to color value `c`

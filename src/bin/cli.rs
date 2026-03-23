@@ -2,7 +2,7 @@ use clap::{Args, Parser, Subcommand};
 use clap_num::si_number;
 use rand::{
     Rng,
-    distr::{StandardUniform, Uniform},
+    distr::Uniform,
 };
 use std::path::{Path, PathBuf};
 
@@ -154,21 +154,12 @@ fn run() -> Result<(), FlameError> {
                     index += 1;
                 }
 
-                let distr = random::FlameDistribution {
-                    func_distr: random::FunctionDistribution {
-                        aff_distr: random::AffineDistribution {
-                            uniformity: args.uniformity,
-                            skewness: args.skewness,
-                        },
-                        var_distr: random::VariationDistribution(StandardUniform),
-                    },
-                    palette_distr: random::PaletteDistribution(3..=7),
-                    symmetry_distr: Uniform::try_from(1..=1).unwrap(),
-                    func_num_distr: Uniform::try_from(
-                        args.num_functions[0]..=args.num_functions[1],
-                    )
-                    .unwrap(),
-                };
+                let mut distr = random::DefaultFlameDistribution::default();
+                distr.func_distr.aff_distr.uniformity = args.uniformity;
+                distr.func_distr.aff_distr.skewness = args.skewness;
+                distr.func_num_distr = Uniform::try_from(
+                    args.num_functions[0]..=args.num_functions[1],
+                ).unwrap();
 
                 let flame = rng.sample(distr);
 
