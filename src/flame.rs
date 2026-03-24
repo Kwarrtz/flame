@@ -119,11 +119,12 @@ impl Flame {
                 _ => unreachable!(),
             }
 
-            let real_point = self.last.eval(rng, point);
-            if i > 20 && self.bounds.contains(&real_point) {
-                // calculate point in screen space and find corresponding bucket
-                let screen_point = trans * real_point;
-                let bucket = buffer.at_mut(screen_point);
+            // calculate point in screen coordinates
+            let screen_point = trans * self.last.eval(rng, point);
+
+            if i > 20 && let Some(bucket) = buffer.at_mut(screen_point) {
+                // skip plotting the point if its the first 20 iterations or the point
+                // is out of bounds
 
                 // get color corresponding to color value `c`
                 let color = self.palette.sample(c).expect("color index out of bounds");

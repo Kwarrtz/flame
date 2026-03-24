@@ -12,17 +12,25 @@ pub struct Buffer<T> {
 }
 
 impl<T: Copy> Buffer<T> {
-    pub fn get(&self, x: usize, y: usize) -> Bucket<T> {
-        self.buckets[x + y * self.width]
+    pub fn get(&self, x: usize, y: usize) -> Option<Bucket<T>> {
+        if x >= self.width || y >= self.height {
+            return None;
+        }
+
+        Some(self.buckets[x + y * self.width])
     }
 
-    pub fn get_mut(&mut self, x: usize, y: usize) -> &mut Bucket<T> {
-        &mut self.buckets[x + y * self.width]
+    pub fn get_mut(&mut self, x: usize, y: usize) -> Option<&mut Bucket<T>> {
+        if x >= self.width || y >= self.height {
+            return None;
+        }
+
+        Some(&mut self.buckets[x + y * self.width])
     }
 
     /// Get the bucket at a `Point`, i.e., rounding its components
     /// down to the nearest integer
-    pub fn at_mut(&mut self, p: Point2<f32>) -> &mut Bucket<T> {
+    pub fn at_mut(&mut self, p: Point2<f32>) -> Option<&mut Bucket<T>> {
         self.get_mut(p[0] as usize, p[1] as usize)
     }
 
