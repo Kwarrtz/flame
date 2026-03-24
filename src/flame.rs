@@ -162,9 +162,9 @@ impl Flame {
         serde_json::from_str(src)
     }
 
-    /// Convert from string in RON format
-    pub fn from_ron(src: &str) -> ron::error::SpannedResult<Flame> {
-        ron::from_str(src)
+    /// Convert from slice of bytes in MsgPack format
+    pub fn from_mp(src: &[u8]) -> Result<Flame, rmp_serde::decode::Error> {
+        rmp_serde::from_slice(src)
     }
 
     /// Convert from string in YAML format
@@ -174,7 +174,8 @@ impl Flame {
 
     /// Read from a specification file. Auto-detect format using file extension
     pub fn from_file(path: impl AsRef<Path>) -> Result<Flame, Error> {
-        let contents = std::fs::read_to_string(path.as_ref()).map_err(Error::FileReadError)?;
+        // let contents = std::fs::read_to_string(path.as_ref()).map_err(Error::FileReadError)?;
+        let file = std::fs::File::open(path.as_ref()).map_err(Error::FileReadError)?;
         Ok(
             match path
                 .as_ref()
@@ -182,9 +183,9 @@ impl Flame {
                 .ok_or(Error::ExtensionError)?
                 .to_str()
             {
-                Some("json") => Flame::from_json(&contents)?,
-                Some("ron") => Flame::from_ron(&contents)?,
-                Some("yaml") => Flame::from_yaml(&contents)?,
+                Some("json") => serde_json::from_reader(&file)?,
+                Some("yaml") => serde_yaml::from_reader(&file)?,
+                Some("flam3") => rmp_serde::from_read(&file)?,
                 _ => return Err(Error::ExtensionError),
             },
         )
@@ -200,19 +201,26 @@ impl Flame {
         serde_yaml::to_string(self)
     }
 
+
+    /// Convert to MsgPack format
+    pub fn to_mp(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+        rmp_serde::to_vec(self)
+    }
+
     /// Save to file, auto-detecting desired format from file extension
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
-        let serialized = match path
+        let mut file = std::fs::File::open(path.as_ref()).map_err(Error::FileWriteError)?;
+        match path
             .as_ref()
             .extension()
             .ok_or(Error::ExtensionError)?
             .to_str()
         {
-            Some("json") => self.to_json()?,
-            Some("yaml") => self.to_yaml()?,
+            Some("json") => serde_json::to_writer(file, self)?,
+            Some("yaml") => serde_yaml::to_writer(file, self)?,
+            Some("flam3") => rmp_serde::encode::write(&mut file, self)?,
             _ => return Err(Error::ExtensionError),
         };
-        std::fs::write(path, serialized).map_err(Error::FileWriteError)?;
 
         Ok(())
     }

@@ -27,16 +27,18 @@ pub enum Error {
     #[error("could not parse flame file\n{0}")]
     JsonError(#[from] serde_json::Error),
     #[error("could not parse flame file\n{0}")]
-    RonError(#[from] ron::error::SpannedError),
-    #[error("could not parse flame file\n{0}")]
     YamlError(#[from] serde_yaml::Error),
+    #[error("could not parse flame file\n{0}")]
+    MpDecodeError(#[from] rmp_serde::decode::Error),
+    #[error("could not parse flame file\n{0}")]
+    MpEncodeError(#[from] rmp_serde::encode::Error),
     #[error("failed to read flame file\n{0}")]
     FileReadError(std::io::Error),
     #[error("failed to write flame file\n{0}")]
     FileWriteError(std::io::Error),
     #[error("invalid output directory\n{0}")]
     DirectoryWriteError(std::io::Error),
-    #[error("input file does not have valid extension (must be .json or .ron)")]
+    #[error("input file does not have valid extension (must be .json, .yaml, or .flam3)")]
     ExtensionError,
     #[error("failed to save image\n{0}")]
     ImageSaveError(#[from] image::ImageError),
