@@ -10,6 +10,6 @@ pub mod render;
 pub mod variation;
 
 mod flame;
-pub use error::FlameError;
+pub use error::Error;
 pub use flame::*;
 pub use render::RenderConfig;

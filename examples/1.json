@@ -1,4 +1,5 @@
 {
+  "version": "1",
   "bounds": {
     "x_min": -3,
     "x_max": 3,

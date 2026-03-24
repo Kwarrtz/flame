@@ -89,7 +89,7 @@ fn render_and_save(
     out: impl AsRef<Path>,
     run_cfg: RunConfig,
     render_cfg: RenderConfig,
-) -> Result<(), FlameError> {
+) -> Result<(), Error> {
     let buffer = flame.run(run_cfg);
     let img_buffer = buffer.render(render_cfg, run_cfg.iters);
 
@@ -98,7 +98,7 @@ fn render_and_save(
     Ok(())
 }
 
-fn run() -> Result<(), FlameError> {
+fn run() -> Result<(), Error> {
     let cli = Cli::parse();
     let run_cfg = cli.run_config();
     let render_cfg = cli.render_config();
@@ -126,8 +126,8 @@ fn run() -> Result<(), FlameError> {
         Commands::RandGen(args) => {
             let mut rng = rand::rng();
 
-            if !std::fs::exists(&args.output).map_err(FlameError::DirectoryWriteError)? {
-                std::fs::create_dir(&args.output).map_err(FlameError::DirectoryWriteError)?;
+            if !std::fs::exists(&args.output).map_err(Error::DirectoryWriteError)? {
+                std::fs::create_dir(&args.output).map_err(Error::DirectoryWriteError)?;
             }
 
             println!("Generating flames...");
@@ -145,8 +145,8 @@ fn run() -> Result<(), FlameError> {
                     img_output = file_output.with_extension("png");
 
                     let exists = std::fs::exists(&spec_output)
-                        .map_err(FlameError::FileWriteError)?
-                        || std::fs::exists(&img_output).map_err(FlameError::FileWriteError)?;
+                        .map_err(Error::FileWriteError)?
+                        || std::fs::exists(&img_output).map_err(Error::FileWriteError)?;
                     if !exists {
                         break;
                     }

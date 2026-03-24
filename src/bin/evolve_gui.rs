@@ -5,7 +5,7 @@ use rand::distr::uniform::Uniform;
 
 use xilem::{
     Blob, Color, EventLoop, WidgetView, WindowOptions, Xilem, core::fork, masonry::peniko::ImageData, style::Style, view::{
-        button, flex_col, flex_row, image, label, portal, spinner, split, task_raw, text_button, text_input
+        MainAxisAlignment, button, flex_col, flex_row, image, label, portal, spinner, split, task_raw, text_button, text_input
     }, winit::error::EventLoopError
 };
 
@@ -144,7 +144,7 @@ impl TryFrom<EvolveConfigFields> for DefaultEvolveConfig {
 }
 
 const RUN_CFG: RunConfig = RunConfig {
-    iters: 1_000_000,
+    iters: 10_000_000,
     width: 250,
     height: 250,
     threads: 10
@@ -161,7 +161,7 @@ impl Default for EvolveConfigFields {
     fn default() -> Self {
         EvolveConfigFields {
             flame_distr: Default::default(),
-            palette_key_mutability: String::from("0.01"),
+            palette_key_mutability: String::from("0.04"),
             palette_color_mutability: String::from("10"),
             affine_mutability: String::from("0.05"),
             variation_param_mutability: String::from("0.1"),
@@ -174,7 +174,7 @@ impl Default for EvolveConfigFields {
             symmetry_replacement_rate: String::from("0"),
             last_replacement_rate: String::from("0"),
             pop_size: String::from("100"),
-            asexuality: String::from("0.5"),
+            asexuality: String::from("1"),
             fitness_weight: String::from("3"),
         }
     }
@@ -186,6 +186,7 @@ struct AppData {
     images: Vec<ImageData>,
     selected: HashSet<usize>,
     processing: bool,
+    generation: u32,
 }
 
 impl Default for AppData {
@@ -196,6 +197,7 @@ impl Default for AppData {
             images: vec![],
             selected: HashSet::new(),
             processing: false,
+            generation: 0,
         }
     }
 }
@@ -242,6 +244,7 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
                 data.images = images;
                 data.selected.clear();
                 data.processing = false;
+                data.generation += 1;
             },
         );
 
@@ -382,8 +385,9 @@ fn app_logic(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
 
     let button_row = flex_row((
         data.processing.then_some(spinner()),
+        label(format!("Generation: {}", data.generation)),
         next_gen_button(data),
-    ));
+    )).main_axis_alignment(MainAxisAlignment::End);
 
     split(
         config_view(data),

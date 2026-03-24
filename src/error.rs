@@ -1,6 +1,6 @@
-use thiserror::Error;
+// use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum FunctionEntryError {
     #[error("color speed must be between 0 and 1")]
     ColorSpeed,
@@ -8,7 +8,7 @@ pub enum FunctionEntryError {
     Color
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum PaletteError {
     #[error("at least one key out of bounds (must be strictly between 0 and 1)")]
     OutOfBounds,
@@ -18,8 +18,12 @@ pub enum PaletteError {
     IncorrectNumber
 }
 
-#[derive(Error, Debug)]
-pub enum FlameError {
+#[derive(thiserror::Error, Debug)]
+#[error("invalid flame specification version")]
+pub struct FlameError;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
     #[error("could not parse flame file\n{0}")]
     JsonError(#[from] serde_json::Error),
     #[error("could not parse flame file\n{0}")]

@@ -1,3 +1,5 @@
+version: "1"
+
 bounds:
   x_min: -3.5
   x_max: 2.5

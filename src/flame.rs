@@ -17,6 +17,10 @@ pub struct RunConfig {
 
 /// Flame specification
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "self::_serde::FlameSource",
+    into = "self::_serde::FlameSource"
+)]
 pub struct Flame {
     pub functions: Vec<FunctionEntry>,
     /// Final transform, executed unconditionally before plotting
@@ -169,19 +173,19 @@ impl Flame {
     }
 
     /// Read from a specification file. Auto-detect format using file extension
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Flame, FlameError> {
-        let contents = std::fs::read_to_string(path.as_ref()).map_err(FlameError::FileReadError)?;
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Flame, Error> {
+        let contents = std::fs::read_to_string(path.as_ref()).map_err(Error::FileReadError)?;
         Ok(
             match path
                 .as_ref()
                 .extension()
-                .ok_or(FlameError::ExtensionError)?
+                .ok_or(Error::ExtensionError)?
                 .to_str()
             {
                 Some("json") => Flame::from_json(&contents)?,
                 Some("ron") => Flame::from_ron(&contents)?,
                 Some("yaml") => Flame::from_yaml(&contents)?,
-                _ => return Err(FlameError::ExtensionError),
+                _ => return Err(Error::ExtensionError),
             },
         )
     }
@@ -197,19 +201,64 @@ impl Flame {
     }
 
     /// Save to file, auto-detecting desired format from file extension
-    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), FlameError> {
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
         let serialized = match path
             .as_ref()
             .extension()
-            .ok_or(FlameError::ExtensionError)?
+            .ok_or(Error::ExtensionError)?
             .to_str()
         {
             Some("json") => self.to_json()?,
             Some("yaml") => self.to_yaml()?,
-            _ => return Err(FlameError::ExtensionError),
+            _ => return Err(Error::ExtensionError),
         };
-        std::fs::write(path, serialized).map_err(FlameError::FileWriteError)?;
+        std::fs::write(path, serialized).map_err(Error::FileWriteError)?;
 
         Ok(())
+    }
+}
+
+mod _serde {
+    use super::*;
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(tag="version")]
+    pub enum FlameSource {
+        #[serde(rename="1")]
+        Valid {
+            functions: Vec<FunctionEntry>,
+            #[serde(default)]
+            last: Function,
+            #[serde(default)]
+            symmetry: i8,
+            palette: Palette,
+            bounds: Bounds,
+        },
+        #[serde(other)]
+        Invalid
+    }
+
+    impl From<Flame> for FlameSource {
+        fn from(value: Flame) -> Self {
+            FlameSource::Valid {
+                functions: value.functions,
+                last: value.last,
+                symmetry: value.symmetry,
+                palette: value.palette,
+                bounds: value.bounds,
+            }
+        }
+    }
+
+    impl TryFrom<FlameSource> for Flame {
+         type Error = FlameError;
+
+         fn try_from(value: FlameSource) -> Result<Self, Self::Error> {
+             match value {
+                 FlameSource::Valid { functions, last, symmetry, palette, bounds }
+                     => Ok(Flame { functions, last, symmetry, palette, bounds }),
+                 FlameSource::Invalid => Err(FlameError)
+             }
+         }
     }
 }
