@@ -209,7 +209,7 @@ impl Flame {
 
     /// Save to file, auto-detecting desired format from file extension
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
-        let mut file = std::fs::File::open(path.as_ref()).map_err(Error::FileWriteError)?;
+        let mut file = std::fs::File::create(path.as_ref()).map_err(Error::FileWriteError)?;
         match path
             .as_ref()
             .extension()

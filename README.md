@@ -20,7 +20,7 @@ the algorithm implemented here goes to Scott Draves and his colleagues.
 ## Command-line interface
 
 The primary executable in this crate is `cli`, which has two subcommands.
-* `render`: Renders a flame from a specification file in YAML, JSON, or MsgPack format.
+* `render`: Renders a flame from a specification file in YAML, JSON, or MsgPack (.flam3) format.
   The specification used to generate the image above can be found in the `examples` folder.
 * `rand-gen`: Generates a specified number of flame specification files at random, along
   with preview renders.

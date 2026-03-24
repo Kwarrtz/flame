@@ -13,45 +13,63 @@ use flame::*;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-    /// Number of iterations of the chaos game to run (accepts SI postfixes).
-    ///
-    /// Higher values reduce noise but take longer to run.
-    #[arg(short, long, default_value = "100M", value_parser = si_number::<usize>)]
-    iters: usize,
-    /// Number of parallel threads.
-    #[arg(short, long, default_value_t = 10)]
-    threads: usize,
-    /// Dimensions (in pixels) of the output image.
-    #[arg(short, long, number_of_values = 2, default_values_t = [1000, 1000])]
-    #[arg(value_names = ["WIDTH", "HEIGHT"])]
-    dims: Vec<usize>,
-    /// Image brightness.
-    #[arg(short, long, default_value_t = 20.0)]
-    brightness: f64,
-    /// Output a grayscale image, ignoring any specified color information.
-    #[arg(short = 'G', long)]
-    grayscale: bool,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Render from a pre-existing flame descriptor file.
-    Render {
-        /// Path to flame descriptor (file extension must be JSON or YAML).
-        input: PathBuf,
-        /// Path to output image (file extension must be JPEG or PNG).
-        output: PathBuf,
-    },
-    /// Randomly generate flames.
-    RandGen(RandGenArgs),
+    /// Render one or more flames from descriptor files.
+    Render(RenderArgs),
+    /// Randomly generate flame descriptors.
+    Random(RandomArgs),
 }
 
 #[derive(Args)]
-struct RandGenArgs {
+struct RenderArgs {    
+        /// Path to flame descriptor(s) (file extension must be .json, .yaml, or .flam3).
+        input: Vec<PathBuf>,
+        /// Path to output directory.
+        ///
+        /// If multiple flames are selected, this is treated as a directory name, which will
+        /// be created if it does not already exist. If a single input was provided, it is
+        /// instead treated as a full file path which must have the extension .png or .jpeg.
+        /// In this case, the -f flag is ignored.
+        ///
+        /// If this option is not provided, output images have the same path stem as their
+        /// source descriptor.
+        #[arg(short, long)]
+        output: Option<PathBuf>,         
+        /// File type of output image. Allowed values are 'jpeg' and 'png'.
+        #[arg(short = 'f', long, default_value = "jpeg")]
+        filetype: String,
+        /// Number of iterations of the chaos game to run (accepts SI postfixes).
+        ///
+        /// Higher values reduce noise but take longer to run.
+        #[arg(short, long, default_value = "100M", value_parser = si_number::<usize>)]
+        iters: usize,
+        /// Number of parallel threads.
+        #[arg(short, long, default_value_t = 10)]
+        threads: usize,
+        /// Dimensions (in pixels) of the output image.
+        #[arg(short, long, number_of_values = 2, default_values_t = [1000, 1000])]
+        #[arg(value_names = ["WIDTH", "HEIGHT"])]
+        dims: Vec<usize>,
+        /// Image brightness.
+        #[arg(short, long, default_value_t = 20.0)]
+        brightness: f64,
+        /// Output a grayscale image, ignoring any specified color information.
+        #[arg(short = 'G', long)]
+        grayscale: bool,
+}
+
+#[derive(Args)]
+struct RandomArgs {
     /// Number of flames to be generated.
     num: usize,
     /// Path to output directory.
     output: PathBuf,
+    /// Output image type ('json', 'yaml', or 'flam3')
+    #[arg(short, long, default_value = "json")]
+    filetype: String,
     /// Scaling uniformity for affine transformations.
     #[arg(short, long, default_value_t = 0.5)]
     uniformity: f32,
@@ -64,7 +82,7 @@ struct RandGenArgs {
     num_functions: Vec<usize>,
 }
 
-impl Cli {
+impl RenderArgs {
     fn run_config(&self) -> RunConfig {
         RunConfig {
             width: self.dims[0],
@@ -100,33 +118,55 @@ fn render_and_save(
 
 fn run() -> Result<(), Error> {
     let cli = Cli::parse();
-    let run_cfg = cli.run_config();
-    let render_cfg = cli.render_config();
 
     match cli.command {
-        Commands::Render { input, output } => {
-            let flame: Flame = Flame::from_file(input)?;
-
-            println!("Rendering flame...");
+        Commands::Render(args) => {
+            let run_cfg = args.run_config();
+            let render_cfg = args.render_config();
+            
+            println!("Rendering {} flame(s)...", args.input.len());
 
             let before_run = std::time::Instant::now();
 
-            render_and_save(flame, &output, run_cfg, render_cfg)?;
+            if args.input.len() == 1 && let Some(out_path) = args.output {
+                // output filename is specified
+                let flame = Flame::from_file(&args.input[0])?;
+                render_and_save(flame, out_path, run_cfg, render_cfg)?;
+            } else {
+                // create the output directory, if it's specified and doesn't exist
+                if let Some(ref out_dir) = args.output && !out_dir.exists() {
+                    std::fs::create_dir(out_dir).map_err(Error::DirectoryWriteError)?;
+                }
+
+                for in_path in args.input {
+                    let out_path = if let Some(ref out_dir) = args.output {
+                        // output directory is specified
+                        out_dir
+                            .with_file_name(in_path.file_name().expect("input must be a path to a file"))
+                            .with_extension(&args.filetype)
+                    } else {
+                        // no output destination specified
+                        in_path.with_extension(&args.filetype)
+                    };
+
+                    let flame = Flame::from_file(in_path)?;
+                    render_and_save(flame, out_path, run_cfg, render_cfg)?;
+                }
+            }
 
             let dur = before_run.elapsed();
 
             println!(
-                "Completed! Rendered in {}.{:03} seconds. Output written to '{}'",
+                "Completed! Rendered in {}.{:03} seconds.",
                 dur.as_secs(),
-                dur.subsec_millis(),
-                output.display()
+                dur.subsec_millis()
             );
         }
 
-        Commands::RandGen(args) => {
+        Commands::Random(args) => {
             let mut rng = rand::rng();
 
-            if !std::fs::exists(&args.output).map_err(Error::DirectoryWriteError)? {
+            if !args.output.exists() {
                 std::fs::create_dir(&args.output).map_err(Error::DirectoryWriteError)?;
             }
 
@@ -136,18 +176,14 @@ fn run() -> Result<(), Error> {
 
             let mut index = 1;
             for _ in 1..=args.num {
-                let mut file_output: PathBuf;
-                let mut spec_output: PathBuf;
-                let mut img_output: PathBuf;
+                // find the next available index in the directory
+                let mut out_path: PathBuf;
                 loop {
-                    file_output = args.output.join(PathBuf::from(index.to_string()));
-                    spec_output = file_output.with_extension("json");
-                    img_output = file_output.with_extension("png");
+                    out_path = args.output
+                        .join(PathBuf::from(index.to_string()))
+                        .with_extension(&args.filetype);
 
-                    let exists = std::fs::exists(&spec_output)
-                        .map_err(Error::FileWriteError)?
-                        || std::fs::exists(&img_output).map_err(Error::FileWriteError)?;
-                    if !exists {
+                    if !std::fs::exists(&out_path).map_err(Error::FileWriteError)? {
                         break;
                     }
 
@@ -163,14 +199,13 @@ fn run() -> Result<(), Error> {
 
                 let flame = rng.sample(distr);
 
-                flame.save(spec_output)?;
-                render_and_save(flame, img_output, run_cfg, render_cfg)?;
+                flame.save(out_path)?;
             }
 
             let dur = before_run.elapsed();
 
             println!(
-                "Completed! Rendered in {}.{:03} seconds. Output written to '{}'",
+                "Completed! Generated in {}.{:03} seconds. Output written to '{}'",
                 dur.as_secs(),
                 dur.subsec_millis(),
                 args.output.display()
