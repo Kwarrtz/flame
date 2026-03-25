@@ -4,14 +4,15 @@ use rand::distr::StandardUniform;
 use rand::distr::uniform::Uniform;
 
 use xilem::{
-    Blob, Color, EventLoop, WidgetView, WindowOptions, Xilem, core::fork, masonry::peniko::ImageData, style::Style, view::{
-        MainAxisAlignment, button, flex_col, flex_row, image, label, portal, spinner, split, task_raw, text_button, text_input
+    Blob, Color, EventLoop, WidgetView, WindowOptions, Xilem, core::fork,
+    masonry::peniko::ImageData, style::Style, view::{
+        MainAxisAlignment, button, flex_col, flex_row, image, label, portal, spinner, split, task, task_raw, text_button, text_input
     }, winit::error::EventLoopError
 };
 
 use flame::{RunConfig, random::{
-    AffineDistribution, DefaultFlameDistribution, FlameDistribution, FunctionDistribution,
-    PaletteDistribution, VariationDistribution,
+    AffineDistribution, DefaultFlameDistribution, FlameDistribution,
+    FunctionDistribution, PaletteDistribution, VariationDistribution,
 }};
 use flame::{
     Flame, RenderConfig,
@@ -25,14 +26,16 @@ type DefaultEvolveConfig = EvolveConfig<
     PaletteDistribution<RangeInclusive<usize>>,
 >;
 
-/// String-backed mirror of `EvolveConfig` for use as Xilem widget state.
+/// String-backed mirror of `EvolveConfig`, `RunConfig`, and `RenderConfig`
+/// for use as Xilem widget state.
 ///
-/// Each scalar field is stored as a `String` so it can be bound directly to a
-/// text-input widget. `flame_distr` is kept as `DefaultFlameDistribution`
+/// Each scalar field is stored as a `String` so it can be bound directly to
+/// a text-input widget. `flame_distr` is kept as `DefaultFlameDistribution`
 /// because it cannot be meaningfully represented as a single string.
-/// Convert to a validated `EvolveConfig` via `TryFrom`.
+/// Use `to_evolve_config`, `to_run_config`, and `to_render_config` to
+/// obtain validated config structs.
 #[derive(Clone)]
-pub struct EvolveConfigFields {
+pub struct ConfigFields {
     pub flame_distr: DefaultFlameDistribution,
 
     // standard deviations for Gaussian noise applied each generation
@@ -57,72 +60,36 @@ pub struct EvolveConfigFields {
     /// fit individuals get weight fitness_weight / (1 + fitness_weight);
     /// unfit individuals get weight 1 / (1 + fitness_weight)
     pub fitness_weight: String,
+
+    // RunConfig fields
+    pub width: String,
+    pub height: String,
+    pub iters: String,
+    pub threads: String,
+
+    // RenderConfig fields (grayscale always false)
+    pub brightness: String,
 }
 
-#[derive(Debug)]
-pub enum EvolveConfigFieldsError {
-    ParseFloat {
-        field: &'static str,
-        source: std::num::ParseFloatError,
-    },
-    ParseInt {
-        field: &'static str,
-        source: std::num::ParseIntError,
-    },
-    ZeroPopSize,
-}
-
-impl std::fmt::Display for EvolveConfigFieldsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ParseFloat { field, source } => write!(f, "invalid value for {field}: {source}"),
-            Self::ParseInt { field, source } => write!(f, "invalid value for {field}: {source}"),
-            Self::ZeroPopSize => write!(f, "pop_size must be greater than zero"),
-        }
-    }
-}
-
-impl std::error::Error for EvolveConfigFieldsError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::ParseFloat { source, .. } => Some(source),
-            Self::ParseInt { source, .. } => Some(source),
-            Self::ZeroPopSize => None,
-        }
-    }
-}
-
-impl TryFrom<EvolveConfigFields> for DefaultEvolveConfig {
-    type Error = EvolveConfigFieldsError;
-
-    fn try_from(fields: EvolveConfigFields) -> Result<Self, Self::Error> {
+impl ConfigFields {
+    pub fn to_evolve_config(&self) -> Option<DefaultEvolveConfig> {
         macro_rules! parse_f32 {
             ($field:ident) => {
-                fields.$field.parse::<f32>().map_err(|source| {
-                    EvolveConfigFieldsError::ParseFloat {
-                        field: stringify!($field),
-                        source,
-                    }
-                })?
+                self.$field.parse::<f32>().ok()?
             };
         }
 
-        let pop_size = fields.pop_size.parse::<usize>().map_err(|source| {
-            EvolveConfigFieldsError::ParseInt {
-                field: "pop_size",
-                source,
-            }
-        })?;
+        let pop_size = self.pop_size.parse::<usize>().ok()?;
         if pop_size == 0 {
-            return Err(EvolveConfigFieldsError::ZeroPopSize);
+            return None;
         }
 
-        Ok(EvolveConfig {
+        Some(EvolveConfig {
             flame_distr: FlameDistribution {
-                func_distr: fields.flame_distr.func_distr,
-                symmetry_distr: fields.flame_distr.symmetry_distr,
-                func_num_distr: fields.flame_distr.func_num_distr,
-                palette_distr: fields.flame_distr.palette_distr,
+                func_distr: self.flame_distr.func_distr.clone(),
+                symmetry_distr: self.flame_distr.symmetry_distr,
+                func_num_distr: self.flame_distr.func_num_distr,
+                palette_distr: self.flame_distr.palette_distr.clone(),
             },
             palette_key_mutability: parse_f32!(palette_key_mutability),
             palette_color_mutability: parse_f32!(palette_color_mutability),
@@ -141,23 +108,27 @@ impl TryFrom<EvolveConfigFields> for DefaultEvolveConfig {
             fitness_weight: parse_f32!(fitness_weight),
         })
     }
+
+    pub fn to_run_config(&self) -> Option<RunConfig> {
+        Some(RunConfig {
+            width: self.width.parse().ok()?,
+            height: self.height.parse().ok()?,
+            iters: self.iters.parse().ok()?,
+            threads: self.threads.parse().ok()?,
+        })
+    }
+
+    pub fn to_render_config(&self) -> Option<RenderConfig> {
+        Some(RenderConfig {
+            brightness: self.brightness.parse().ok()?,
+            grayscale: false,
+        })
+    }
 }
 
-const RUN_CFG: RunConfig = RunConfig {
-    iters: 10_000_000,
-    width: 250,
-    height: 250,
-    threads: 10
-};
-
-const RENDER_CFG: RenderConfig = RenderConfig {
-    brightness: 20.0,
-    grayscale: false,
-};
-
-impl Default for EvolveConfigFields {
+impl Default for ConfigFields {
     fn default() -> Self {
-        EvolveConfigFields {
+        ConfigFields {
             flame_distr: Default::default(),
             palette_key_mutability: String::from("0.04"),
             palette_color_mutability: String::from("10"),
@@ -174,27 +145,34 @@ impl Default for EvolveConfigFields {
             pop_size: String::from("100"),
             asexuality: String::from("1"),
             fitness_weight: String::from("3"),
+            width: String::from("250"),
+            height: String::from("250"),
+            iters: String::from("10000000"),
+            threads: String::from("10"),
+            brightness: String::from("20"),
         }
     }
 }
 
 struct AppData {
-    evolve_config: EvolveConfigFields,
+    config: ConfigFields,
     pop: Vec<Flame>,
     images: Vec<ImageData>,
     selected: HashSet<usize>,
     processing: bool,
+    saving: bool,
     generation: u32,
 }
 
 impl Default for AppData {
     fn default() -> Self {
         AppData {
-            evolve_config: Default::default(),
+            config: Default::default(),
             pop: vec![],
             images: vec![],
             selected: HashSet::new(),
             processing: false,
+            saving: false,
             generation: 0,
         }
     }
@@ -206,30 +184,39 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
     });
     let t = task_raw(
             move |proxy, state: &mut AppData| {
-                let config: DefaultEvolveConfig =
-                    state.evolve_config.clone().try_into().unwrap();
+                let evolve_config: DefaultEvolveConfig =
+                    state.config.to_evolve_config().unwrap();
+                let run_cfg = state.config.to_run_config().unwrap();
+                let render_cfg = state.config.to_render_config().unwrap();
                 let pop = state.pop.clone();
                 let selected = state.selected.clone();
                 async move {
                     let next_pop = if pop.is_empty() {
-                        evolve_init(&config)
+                        evolve_init(&evolve_config)
                     } else {
-                        evolve_step(pop, selected, &config)
+                        evolve_step(pop, selected, &evolve_config)
                     };
 
                     let images = next_pop
                         .iter()
                         .map(|flame| {
-                            let mut img_buf = [0u8; RUN_CFG.width * RUN_CFG.height * 4];
+                            let mut img_buf =
+                                vec![0u8; run_cfg.width * run_cfg.height * 4];
                             flame
-                                .run(RUN_CFG)
-                                .render_raw_rgba(&mut img_buf, RENDER_CFG, RUN_CFG.iters);
+                                .run(run_cfg)
+                                .render_raw_rgba(
+                                    &mut img_buf,
+                                    render_cfg,
+                                    run_cfg.iters,
+                                );
                             ImageData {
-                                data: Blob::new(std::sync::Arc::new(img_buf)),
+                                data: Blob::new(std::sync::Arc::new(
+                                    img_buf.into_boxed_slice(),
+                                )),
                                 format: xilem::ImageFormat::Rgba8,
                                 alpha_type: xilem::masonry::peniko::ImageAlphaType::Alpha,
-                                width: RUN_CFG.width as u32,
-                                height: RUN_CFG.height as u32,
+                                width: run_cfg.width as u32,
+                                height: run_cfg.height as u32,
                             }
                         })
                         .collect::<Vec<_>>();
@@ -249,104 +236,171 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
     fork(b, data.processing.then_some(t))
 }
 
-fn config_view(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
-    let c = &data.evolve_config;
+fn save_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
+    let b = text_button("Save", |data: &mut AppData| data.saving = true);
+    
+    let t = task(
+        |proxy, _| async move {
+            let dialog = rfd::AsyncFileDialog::new().save_file();
+            if let Some(handle) = dialog.await {
+                let _ = proxy.message(handle);      
+            }
+        },
+        |data: &mut AppData, handle| {
+            let path = handle.path();
+            if !path.exists() {
+                std::fs::create_dir(path).unwrap();
+            }
+            for (i, flame) in data.pop.iter().enumerate() {
+                flame.save(path.join(format!("{i}.flam3"))).unwrap();
+            }
+            data.saving = false;
+        }
+    );
+
+    fork(b, data.saving.then_some(t))
+}
+
+fn config_panel(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
+    let c = &data.config;
     flex_col((
         flex_row((
             label("palette key mutability"),
             text_input(c.palette_key_mutability.clone(), |d: &mut AppData, v| {
-                d.evolve_config.palette_key_mutability = v
+                d.config.palette_key_mutability = v
             }),
         )),
         flex_row((
             label("palette color mutability"),
-            text_input(c.palette_color_mutability.clone(), |d: &mut AppData, v| {
-                d.evolve_config.palette_color_mutability = v
-            }),
+            text_input(
+                c.palette_color_mutability.clone(),
+                |d: &mut AppData, v| d.config.palette_color_mutability = v,
+            ),
         )),
         flex_row((
             label("affine mutability"),
             text_input(c.affine_mutability.clone(), |d: &mut AppData, v| {
-                d.evolve_config.affine_mutability = v
+                d.config.affine_mutability = v
             }),
         )),
         flex_row((
             label("variation param mutability"),
             text_input(
                 c.variation_param_mutability.clone(),
-                |d: &mut AppData, v| d.evolve_config.variation_param_mutability = v,
+                |d: &mut AppData, v| d.config.variation_param_mutability = v,
             ),
         )),
         flex_row((
             label("weight mutability"),
             text_input(c.weight_mutability.clone(), |d: &mut AppData, v| {
-                d.evolve_config.weight_mutability = v
+                d.config.weight_mutability = v
             }),
         )),
         flex_row((
             label("color mutability"),
             text_input(c.color_mutability.clone(), |d: &mut AppData, v| {
-                d.evolve_config.color_mutability = v
+                d.config.color_mutability = v
             }),
         )),
         flex_row((
             label("color speed mutability"),
-            text_input(c.color_speed_mutability.clone(), |d: &mut AppData, v| {
-                d.evolve_config.color_speed_mutability = v
-            }),
+            text_input(
+                c.color_speed_mutability.clone(),
+                |d: &mut AppData, v| d.config.color_speed_mutability = v,
+            ),
         )),
         flex_row((
             label("bounds mutability"),
             text_input(c.bounds_mutability.clone(), |d: &mut AppData, v| {
-                d.evolve_config.bounds_mutability = v
+                d.config.bounds_mutability = v
             }),
         )),
         flex_row((
             label("function insertion rate"),
-            text_input(c.function_insertion_rate.clone(), |d: &mut AppData, v| {
-                d.evolve_config.function_insertion_rate = v
-            }),
+            text_input(
+                c.function_insertion_rate.clone(),
+                |d: &mut AppData, v| d.config.function_insertion_rate = v,
+            ),
         )),
         flex_row((
             label("color insertion rate"),
-            text_input(c.color_insertion_rate.clone(), |d: &mut AppData, v| {
-                d.evolve_config.color_insertion_rate = v
-            }),
+            text_input(
+                c.color_insertion_rate.clone(),
+                |d: &mut AppData, v| d.config.color_insertion_rate = v,
+            ),
         )),
         flex_row((
             label("symmetry replacement rate"),
-            text_input(c.symmetry_replacement_rate.clone(), |d: &mut AppData, v| {
-                d.evolve_config.symmetry_replacement_rate = v
-            }),
+            text_input(
+                c.symmetry_replacement_rate.clone(),
+                |d: &mut AppData, v| d.config.symmetry_replacement_rate = v,
+            ),
         )),
         flex_row((
             label("last replacement rate"),
-            text_input(c.last_replacement_rate.clone(), |d: &mut AppData, v| {
-                d.evolve_config.last_replacement_rate = v
-            }),
+            text_input(
+                c.last_replacement_rate.clone(),
+                |d: &mut AppData, v| d.config.last_replacement_rate = v,
+            ),
         )),
         flex_row((
             label("pop size"),
             text_input(c.pop_size.clone(), |d: &mut AppData, v| {
-                d.evolve_config.pop_size = v
+                d.config.pop_size = v
             }),
         )),
         flex_row((
             label("asexuality"),
             text_input(c.asexuality.clone(), |d: &mut AppData, v| {
-                d.evolve_config.asexuality = v
+                d.config.asexuality = v
             }),
         )),
         flex_row((
             label("fitness weight"),
             text_input(c.fitness_weight.clone(), |d: &mut AppData, v| {
-                d.evolve_config.fitness_weight = v
+                d.config.fitness_weight = v
             }),
+        )),
+        flex_col((
+            flex_row((
+                label("width"),
+                text_input(c.width.clone(), |d: &mut AppData, v| {
+                    d.config.width = v
+                }),
+            )),
+            flex_row((
+                label("height"),
+                text_input(c.height.clone(), |d: &mut AppData, v| {
+                    d.config.height = v
+                }),
+            )),
+            flex_row((
+                label("iters"),
+                text_input(c.iters.clone(), |d: &mut AppData, v| {
+                    d.config.iters = v
+                }),
+            )),
+            flex_row((
+                label("threads"),
+                text_input(c.threads.clone(), |d: &mut AppData, v| {
+                    d.config.threads = v
+                }),
+            )),
+            flex_row((
+                label("brightness"),
+                text_input(c.brightness.clone(), |d: &mut AppData, v| {
+                    d.config.brightness = v
+                }),
+            )),
         )),
     ))
 }
 
-fn selectable_image(idx: usize, img_data: ImageData, selected: &HashSet<usize>) -> impl WidgetView<AppData> + use<> {
+fn selectable_image(
+    idx: usize,
+    img_data: ImageData,
+    selected: &HashSet<usize>,
+) -> impl WidgetView<AppData> + use<> {
     let c = if selected.contains(&idx) {
         Color::from_rgba8(0, 255, 0, 128)
     } else {
@@ -375,7 +429,9 @@ fn app_logic(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
             flex_row(
                 chunk
                     .iter()
-                    .map(|(idx, img)| selectable_image(*idx, img.clone(), &data.selected))
+                    .map(|(idx, img)| {
+                        selectable_image(*idx, img.clone(), &data.selected)
+                    })
                     .collect::<Vec<_>>(),
             )
         })
@@ -384,11 +440,12 @@ fn app_logic(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
     let button_row = flex_row((
         data.processing.then_some(spinner()),
         label(format!("Generation: {}", data.generation)),
+        save_button(data),
         next_gen_button(data),
     )).main_axis_alignment(MainAxisAlignment::End);
 
     split(
-        config_view(data),
+        portal(config_panel(data)),
         portal(flex_col((gallery_rows, button_row))),
     )
 }
