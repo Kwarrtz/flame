@@ -34,11 +34,17 @@ pub struct EvolveConfig<DF, DS, DN, DP> {
     pub symmetry_replacement_rate: f32,
     pub last_replacement_rate: f32,
 
+    // parameters controlling propagation
     pub pop_size: usize,
-    /// Controls clone vs. recombination: P(clone) = asexuality / (1 + asexuality)
-    pub asexuality: f32,
-    /// Fit individuals get weight fitness_weight / (1 + fitness_weight);
-    /// unfit individuals get weight 1 / (1 + fitness_weight)
+    // /// Controls clone vs. recombination: P(clone) = asexuality / (1 + asexuality)
+    // pub asexuality: f32,
+    /// Probability of recombination (sexual reproduction)
+    pub recomb_rate: f32,
+    /// Probability of immaculate conception (new randomly generated individual added
+    /// to next generation)
+    pub immaculate_rate: f32,
+    /// Ratio between the probability of propagating a selected vs an unselected
+    /// individual
     pub fitness_weight: f32,
 }
 
@@ -65,6 +71,8 @@ pub fn evolve_step<DF, DS, DN, DP>(
 where
     DF: Distribution<FunctionEntry> + Distribution<Function>,
     DS: Distribution<i8>,
+    DN: Distribution<usize>,
+    DP: Distribution<Palette>,
 {
     let mut rng = rand::rng();
     let fit_w = cfg.fitness_weight / (1.0 + cfg.fitness_weight);
@@ -75,16 +83,18 @@ where
         .collect();
     let weighted = WeightedIndex::new(&weights).expect("population must be non-empty");
 
-    let p_clone = cfg.asexuality / (1.0 + cfg.asexuality);
+    // let p_clone = cfg.asexuality / (1.0 + cfg.asexuality);
 
     (0..cfg.pop_size)
         .map(|_| {
-            let mut offspring = if rng.random::<f32>() < p_clone {
-                prev_gen[weighted.sample(&mut rng)].clone()
-            } else {
+            let mut offspring = if rng.random::<f32>() < cfg.recomb_rate {
                 let a = &prev_gen[weighted.sample(&mut rng)];
                 let b = &prev_gen[weighted.sample(&mut rng)];
                 recombine(a, b, &mut rng)
+            } else if rng.random::<f32>() < cfg.immaculate_rate {
+                rng.sample(&cfg.flame_distr)            
+            } else {
+                prev_gen[weighted.sample(&mut rng)].clone()
             };
             mutate(&mut offspring, cfg, &mut rng);
             offspring

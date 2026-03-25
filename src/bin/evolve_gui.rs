@@ -57,10 +57,8 @@ pub struct ConfigFields {
     pub last_replacement_rate: String,
 
     pub pop_size: String,
-    /// controls clone vs. recombination: P(clone) = asexuality / (1 + asexuality)
-    pub asexuality: String,
-    /// fit individuals get weight fitness_weight / (1 + fitness_weight);
-    /// unfit individuals get weight 1 / (1 + fitness_weight)
+    pub recomb_rate: String,
+    pub immaculate_rate: String,
     pub fitness_weight: String,
 
     // RunConfig fields
@@ -106,7 +104,8 @@ impl ConfigFields {
             symmetry_replacement_rate: parse_f32!(symmetry_replacement_rate),
             last_replacement_rate: parse_f32!(last_replacement_rate),
             pop_size,
-            asexuality: parse_f32!(asexuality),
+            recomb_rate: parse_f32!(recomb_rate),
+            immaculate_rate: parse_f32!(immaculate_rate),
             fitness_weight: parse_f32!(fitness_weight),
         })
     }
@@ -145,7 +144,8 @@ impl Default for ConfigFields {
             symmetry_replacement_rate: String::from("0"),
             last_replacement_rate: String::from("0"),
             pop_size: String::from("100"),
-            asexuality: String::from("1"),
+            recomb_rate: String::from("0.5"),
+            immaculate_rate: String::from("0.01"),
             fitness_weight: String::from("3"),
             width: String::from("250"),
             height: String::from("250"),
@@ -314,86 +314,93 @@ fn save_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
 
 fn config_panel(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
     let c = &data.config;
-    flex_col((
+
+    let mutability_fields = flex_col((
         flex_row((
-            label("palette key mutability"),
+            label("palette key"),
             text_input(c.palette_key_mutability.clone(), |d: &mut AppData, v| {
                 d.config.palette_key_mutability = v
             }),
         )),
         flex_row((
-            label("palette color mutability"),
+            label("palette color"),
             text_input(
                 c.palette_color_mutability.clone(),
                 |d: &mut AppData, v| d.config.palette_color_mutability = v,
             ),
         )),
         flex_row((
-            label("affine mutability"),
+            label("affine"),
             text_input(c.affine_mutability.clone(), |d: &mut AppData, v| {
                 d.config.affine_mutability = v
             }),
         )),
         flex_row((
-            label("variation param mutability"),
+            label("variation param"),
             text_input(
                 c.variation_param_mutability.clone(),
                 |d: &mut AppData, v| d.config.variation_param_mutability = v,
             ),
         )),
         flex_row((
-            label("weight mutability"),
+            label("weight"),
             text_input(c.weight_mutability.clone(), |d: &mut AppData, v| {
                 d.config.weight_mutability = v
             }),
         )),
         flex_row((
-            label("color mutability"),
+            label("color"),
             text_input(c.color_mutability.clone(), |d: &mut AppData, v| {
                 d.config.color_mutability = v
             }),
         )),
         flex_row((
-            label("color speed mutability"),
+            label("color speed"),
             text_input(
                 c.color_speed_mutability.clone(),
                 |d: &mut AppData, v| d.config.color_speed_mutability = v,
             ),
         )),
         flex_row((
-            label("bounds mutability"),
+            label("bounds"),
             text_input(c.bounds_mutability.clone(), |d: &mut AppData, v| {
                 d.config.bounds_mutability = v
             }),
         )),
+    ));
+
+    let mutation_fields = flex_col((
         flex_row((
-            label("function insertion rate"),
+            label("function insertion"),
             text_input(
                 c.function_insertion_rate.clone(),
                 |d: &mut AppData, v| d.config.function_insertion_rate = v,
             ),
         )),
         flex_row((
-            label("color insertion rate"),
+            label("color insertion"),
             text_input(
                 c.color_insertion_rate.clone(),
                 |d: &mut AppData, v| d.config.color_insertion_rate = v,
             ),
         )),
         flex_row((
-            label("symmetry replacement rate"),
+            label("symmetry replacement"),
             text_input(
                 c.symmetry_replacement_rate.clone(),
                 |d: &mut AppData, v| d.config.symmetry_replacement_rate = v,
             ),
         )),
         flex_row((
-            label("last replacement rate"),
+            label("last replacement"),
             text_input(
                 c.last_replacement_rate.clone(),
                 |d: &mut AppData, v| d.config.last_replacement_rate = v,
             ),
         )),
+    ));
+
+    let prop_fields = flex_col((
         flex_row((
             label("pop size"),
             text_input(c.pop_size.clone(), |d: &mut AppData, v| {
@@ -401,9 +408,15 @@ fn config_panel(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
             }),
         )),
         flex_row((
-            label("asexuality"),
-            text_input(c.asexuality.clone(), |d: &mut AppData, v| {
-                d.config.asexuality = v
+            label("immaculate rate"),
+            text_input(c.immaculate_rate.clone(), |d: &mut AppData, v| {
+                d.config.immaculate_rate = v
+            }),
+        )),
+        flex_row((
+            label("recomb rate"),
+            text_input(c.recomb_rate.clone(), |d: &mut AppData, v| {
+                d.config.recomb_rate = v
             }),
         )),
         flex_row((
@@ -412,38 +425,50 @@ fn config_panel(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
                 d.config.fitness_weight = v
             }),
         )),
-        flex_col((
-            flex_row((
-                label("width"),
-                text_input(c.width.clone(), |d: &mut AppData, v| {
-                    d.config.width = v
-                }),
-            )),
-            flex_row((
-                label("height"),
-                text_input(c.height.clone(), |d: &mut AppData, v| {
-                    d.config.height = v
-                }),
-            )),
-            flex_row((
-                label("iters"),
-                text_input(c.iters.clone(), |d: &mut AppData, v| {
-                    d.config.iters = v
-                }),
-            )),
-            flex_row((
-                label("threads"),
-                text_input(c.threads.clone(), |d: &mut AppData, v| {
-                    d.config.threads = v
-                }),
-            )),
-            flex_row((
-                label("brightness"),
-                text_input(c.brightness.clone(), |d: &mut AppData, v| {
-                    d.config.brightness = v
-                }),
-            )),
+    ));
+    
+    let render_fields = flex_col((
+        flex_row((
+            label("width"),
+            text_input(c.width.clone(), |d: &mut AppData, v| {
+                d.config.width = v
+            }),
         )),
+        flex_row((
+            label("height"),
+            text_input(c.height.clone(), |d: &mut AppData, v| {
+                d.config.height = v
+            }),
+        )),
+        flex_row((
+            label("iters"),
+            text_input(c.iters.clone(), |d: &mut AppData, v| {
+                d.config.iters = v
+            }),
+        )),
+        flex_row((
+            label("threads"),
+            text_input(c.threads.clone(), |d: &mut AppData, v| {
+                d.config.threads = v
+            }),
+        )),
+        flex_row((
+            label("brightness"),
+            text_input(c.brightness.clone(), |d: &mut AppData, v| {
+                d.config.brightness = v
+            }),
+        )),
+    ));
+
+    flex_col((
+        label("Mutation rates").text_size(25.0),
+        mutation_fields,
+        label("Mutability").text_size(25.0),
+        mutability_fields,
+        label("Propagation").text_size(25.0),
+        prop_fields,
+        label("Rendering").text_size(25.0),
+        render_fields        
     ))
 }
 
