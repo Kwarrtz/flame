@@ -2,10 +2,12 @@ use std::{collections::HashSet, ops::RangeInclusive};
 
 use rand::distr::StandardUniform;
 use rand::distr::uniform::Uniform;
+use rusqlite::Connection;
+
+const DB_PATH: &str = "flames.db";
 
 use xilem::{
-    Blob, Color, EventLoop, WidgetView, WindowOptions, Xilem, core::fork,
-    masonry::peniko::ImageData, style::Style, view::{
+    Blob, Color, EventLoop, WidgetView, WindowOptions, Xilem, core::fork, dpi::LogicalSize, masonry::peniko::ImageData, style::Style, view::{
         MainAxisAlignment, button, flex_col, flex_row, image, label, portal, spinner, split, task, task_raw, text_button, text_input
     }, winit::error::EventLoopError
 };
@@ -162,10 +164,11 @@ struct AppData {
     processing: bool,
     saving: bool,
     generation: u32,
+    timestamp: i64,
 }
 
-impl Default for AppData {
-    fn default() -> Self {
+impl AppData {
+    fn new() -> Self {
         AppData {
             config: Default::default(),
             pop: vec![],
@@ -174,7 +177,40 @@ impl Default for AppData {
             processing: false,
             saving: false,
             generation: 0,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64,
         }
+    }
+}
+
+fn log_gen(
+    timestamp: i64,
+    generation: u32,
+    selected: &HashSet<usize>,
+    pop: &[Flame],
+) {
+    let Ok(conn) = Connection::open(DB_PATH) else {
+        return;
+    };
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS flames (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp  INTEGER NOT NULL,
+            generation INTEGER NOT NULL,
+            selected   INTEGER NOT NULL,
+            blob       BLOB NOT NULL
+        )",
+    );
+    for (i, flame) in pop.iter().enumerate() {
+        let Ok(blob) = flame.to_mp() else { continue };
+        let is_selected = selected.contains(&i) as i64;
+        let _ = conn.execute(
+            "INSERT INTO flames (timestamp, generation, selected, blob)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![timestamp, generation as i64, is_selected, blob],
+        );
     }
 }
 
@@ -225,6 +261,16 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
                 }
             },
             |data: &mut AppData, (next_pop, images)| {
+                // save outgoing generation with its selection state
+                // before overwriting; skip generation 0 (empty pop)
+                if !data.pop.is_empty() {
+                    log_gen(
+                        data.timestamp,
+                        data.generation,
+                        &data.selected,
+                        &data.pop,
+                    );
+                }
                 data.pop = next_pop;
                 data.images = images;
                 data.selected.clear();
@@ -251,7 +297,12 @@ fn save_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
             if !path.exists() {
                 std::fs::create_dir(path).unwrap();
             }
-            for (i, flame) in data.pop.iter().enumerate() {
+            let to_save = data.pop.iter()
+                .enumerate()
+                .filter(|(i, _)| data.selected.contains(i))
+                .map(|(_, f)| f)
+                .enumerate();
+            for (i, flame) in to_save {
                 flame.save(path.join(format!("{i}.flam3"))).unwrap();
             }
             data.saving = false;
@@ -445,16 +496,16 @@ fn app_logic(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
     )).main_axis_alignment(MainAxisAlignment::End);
 
     split(
-        portal(config_panel(data)),
-        portal(flex_col((gallery_rows, button_row))),
-    )
+        portal(config_panel(data)).padding(15.0),
+        portal(flex_col((gallery_rows, button_row))).padding(15.0),
+    ).split_point(0.2)
 }
 
 fn main() -> Result<(), EventLoopError> {
     let app = Xilem::new_simple(
-        AppData::default(),
+        AppData::new(),
         app_logic,
-        WindowOptions::new("Flame evolve"),
+        WindowOptions::new("Flame evolve").with_initial_inner_size(LogicalSize::new(1600,800)),
     );
     app.run_in(EventLoop::with_user_event())?;
     Ok(())

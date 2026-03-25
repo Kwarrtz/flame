@@ -24,6 +24,7 @@ thiserror = "2.0.17"
 async-channel = "2.5"
 flame_macro = { path = "./flame_macro" }
 rfd = "0.17"
+rusqlite = "0.39"
 
 [dependencies.xilem]
 git = "https://github.com/linebender/xilem"
