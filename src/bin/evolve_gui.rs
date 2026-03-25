@@ -151,10 +151,8 @@ const RUN_CFG: RunConfig = RunConfig {
 };
 
 const RENDER_CFG: RenderConfig = RenderConfig {
-     brightness: 20.0,
-     width: RUN_CFG.width,
-     height: RUN_CFG.height,
-     grayscale: false
+    brightness: 20.0,
+    grayscale: false,
 };
 
 impl Default for EvolveConfigFields {
@@ -222,7 +220,7 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
                     let images = next_pop
                         .iter()
                         .map(|flame| {
-                            let mut img_buf = [0u8; RENDER_CFG.width * RENDER_CFG.height * 4];
+                            let mut img_buf = [0u8; RUN_CFG.width * RUN_CFG.height * 4];
                             flame
                                 .run(RUN_CFG)
                                 .render_raw_rgba(&mut img_buf, RENDER_CFG, RUN_CFG.iters);
@@ -230,8 +228,8 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
                                 data: Blob::new(std::sync::Arc::new(img_buf)),
                                 format: xilem::ImageFormat::Rgba8,
                                 alpha_type: xilem::masonry::peniko::ImageAlphaType::Alpha,
-                                width: RENDER_CFG.width as u32,
-                                height: RENDER_CFG.height as u32,
+                                width: RUN_CFG.width as u32,
+                                height: RUN_CFG.height as u32,
                             }
                         })
                         .collect::<Vec<_>>();

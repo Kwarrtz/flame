@@ -7,8 +7,6 @@ use super::buffer::*;
 #[derive(Clone, Copy, Debug)]
 pub struct RenderConfig {
     pub brightness: f64,
-    pub width: usize,
-    pub height: usize,
     pub grayscale: bool,
 }
 

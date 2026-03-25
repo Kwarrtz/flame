@@ -94,8 +94,6 @@ impl RenderArgs {
 
     fn render_config(&self) -> RenderConfig {
         RenderConfig {
-            width: self.dims[0],
-            height: self.dims[1],
             brightness: self.brightness,
             grayscale: self.grayscale,
         }

@@ -16,16 +16,24 @@ use std::{
 use rand::distr::Distribution;
 
 use flame::{
-    self, Flame, RenderConfig, bounds::Bounds, buffer::Buffer, color::{Color, Palette}, function::FunctionEntry, random::{AffineDistribution, PaletteDistribution}, variation::{VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant}
+    self, Flame, RenderConfig, RunConfig, bounds::Bounds, buffer::Buffer,
+    color::{Color, Palette}, function::FunctionEntry,
+    random::{AffineDistribution, PaletteDistribution},
+    variation::{VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant},
 };
 
 const ITERS_PER_LOOP: usize = 100_000;
 const MAX_ITERS: usize = 1_000_000_000;
 const IDLE_SLEEP_DUR: Duration = Duration::from_millis(30);
 
-const DEFAULT_RENDER_CONFIG: RenderConfig = RenderConfig {
+const DEFAULT_RUN_CONFIG: RunConfig = RunConfig {
     width: 500,
     height: 500,
+    iters: 0,
+    threads: 1,
+};
+
+const DEFAULT_RENDER_CONFIG: RenderConfig = RenderConfig {
     brightness: 20.,
     grayscale: false,
 };
@@ -42,15 +50,17 @@ struct NewImage(Size, Vec<u8>);
 
 fn generate_flame(
     rx_flame: Receiver<Flame>,
+    rx_run_config: Receiver<RunConfig>,
     rx_render_config: Receiver<RenderConfig>,
     mut proxy: Proxy,
 ) {
     let mut rng = rand::rng();
 
     let mut flame = rx_flame.recv().unwrap();
+    let mut run_config = rx_run_config.recv().unwrap();
     let mut config = rx_render_config.recv().unwrap();
 
-    let mut buffer: Buffer<u32> = Buffer::new(config.width, config.height);
+    let mut buffer: Buffer<u32> = Buffer::new(run_config.width, run_config.height);
     let mut iters = 0;
 
     loop {
@@ -73,27 +83,32 @@ fn generate_flame(
             restart = true;
         }
 
+        // received new run config (dimensions changed)
+        if let Some(new_run_config) = rx_run_config.try_iter().last() {
+            run_config = new_run_config;
+            restart = true;
+            rerender = true;
+        }
+
         // received new render config
         if let Some(new_config) = rx_render_config.try_iter().last() {
-            // dimensions changed
-            if [new_config.width, new_config.height] != [config.width, config.height] {
-                restart = true;
-            }
-
             rerender = true;
             config = new_config;
         }
 
         if restart {
-            buffer = Buffer::new(config.width, config.height);
+            buffer = Buffer::new(run_config.width, run_config.height);
             iters = 0;
         }
 
         if rerender {
-            let mut img_buf = vec![255; 4 * config.width * config.height];
+            let mut img_buf = vec![255; 4 * run_config.width * run_config.height];
             buffer.render_raw_rgba(&mut img_buf, config, iters);
 
-            let size = Size::new(config.width as i32, config.height as i32);
+            let size = Size::new(
+                run_config.width as i32,
+                run_config.height as i32,
+            );
             if proxy.push(NewImage(size, img_buf)).is_err() {
                 panic!("proxy closed");
             };
@@ -108,17 +123,24 @@ struct SaveFileTo(Option<rfd::FileHandle>);
 struct LoadFileFrom(Option<rfd::FileHandle>);
 
 struct AppData {
+    run_config: RunConfig,
     config: RenderConfig,
     flame: Flame,
+    run_config_tx: Sender<RunConfig>,
     config_tx: Sender<RenderConfig>,
     flame_tx: Sender<Flame>,
 }
 
 impl kas::runner::AppData for AppData {
     fn handle_message(&mut self, messages: &mut impl kas::runner::ReadMessage) {
+        if let Some(new_run_config) = messages.try_pop::<RunConfig>() {
+            self.run_config = new_run_config;
+            self.run_config_tx.send(self.run_config).unwrap();
+        }
+
         if let Some(new_config) = messages.try_pop::<RenderConfig>() {
             self.config = new_config;
-            self.config_tx.send(self.config.clone()).unwrap();
+            self.config_tx.send(self.config).unwrap();
         }
 
         if let Some(new_flame) = messages.try_pop::<Flame>()
@@ -139,33 +161,34 @@ impl kas::runner::AppData for AppData {
     }
 }
 
-fn render_config_panel() -> impl Widget<Data = RenderConfig> {
-    column![
-        row![
-            "Width:",
-            EditBox::parser(|cfg: &RenderConfig| cfg.width, |value| value)
-                .with_width_em(3., 3.)
-                .on_message_update(|_, _, cfg: &mut RenderConfig, val: usize| { cfg.width = val; }),
-            "Height:",
-            EditBox::parser(|cfg: &RenderConfig| cfg.height, |value| value)
-                .with_width_em(3., 3.)
-                .on_message_update(|_, _, cfg, val: usize| cfg.height = val),
-        ],
-        row![
-            "Brightness:",
-            EditBox::parser(
-                |cfg: &RenderConfig| cfg.brightness,
-                |value| value
-            )
+fn run_config_panel() -> impl Widget<Data = RunConfig> {
+    row![
+        "Width:",
+        EditBox::parser(|cfg: &RunConfig| cfg.width, |value| value)
             .with_width_em(3., 3.)
-            .on_message_update(|_, _, cfg, val: f64| cfg.brightness = val),
-            "Grayscale:",
-            CheckBox::new_msg(
-                |_, cfg: &RenderConfig| cfg.grayscale,
-                |checked| checked
-            )
-            .on_message_update(|_, _, cfg, checked: bool| cfg.grayscale = checked),
-        ],
+            .on_message_update(|_, _, cfg: &mut RunConfig, val: usize| { cfg.width = val; }),
+        "Height:",
+        EditBox::parser(|cfg: &RunConfig| cfg.height, |value| value)
+            .with_width_em(3., 3.)
+            .on_message_update(|_, _, cfg, val: usize| cfg.height = val),
+    ]
+}
+
+fn render_config_panel() -> impl Widget<Data = RenderConfig> {
+    row![
+        "Brightness:",
+        EditBox::parser(
+            |cfg: &RenderConfig| cfg.brightness,
+            |value| value
+        )
+        .with_width_em(3., 3.)
+        .on_message_update(|_, _, cfg, val: f64| cfg.brightness = val),
+        "Grayscale:",
+        CheckBox::new_msg(
+            |_, cfg: &RenderConfig| cfg.grayscale,
+            |checked| checked
+        )
+        .on_message_update(|_, _, cfg, checked: bool| cfg.grayscale = checked),
     ]
 }
 
@@ -541,6 +564,7 @@ fn file_bar() -> impl Widget<Data = ()> {
 }
 
 fn main() -> kas::runner::Result<()> {
+    let (run_config_tx, run_config_rx) = channel();
     let (config_tx, config_rx) = channel();
     let (flame_tx, flame_rx) = channel();
     let default_flame = Flame {
@@ -555,21 +579,27 @@ fn main() -> kas::runner::Result<()> {
         bounds: Bounds::new(-1., 1., -1., 1.),
     };
     flame_tx.send(default_flame.clone()).unwrap();
+    run_config_tx.send(DEFAULT_RUN_CONFIG).unwrap();
     config_tx.send(DEFAULT_RENDER_CONFIG).unwrap();
 
     let app = Runner::new(AppData {
+        run_config: DEFAULT_RUN_CONFIG,
         config: DEFAULT_RENDER_CONFIG,
         flame: default_flame,
+        run_config_tx,
         config_tx,
         flame_tx,
     })
     .unwrap();
 
     let proxy = app.create_proxy();
-    thread::spawn(move || generate_flame(flame_rx, config_rx, proxy));
+    thread::spawn(move || {
+        generate_flame(flame_rx, run_config_rx, config_rx, proxy)
+    });
 
+    let run_config_box = run_config_panel()
+        .map(|data: &AppData| &data.run_config);
     let config_box = render_config_panel().map(|data: &AppData| &data.config);
-    // .with_stretch(None, Some(Stretch::None));
 
     let misc_box = misc_panel().map(|data: &AppData| &data.flame);
 
@@ -583,7 +613,9 @@ fn main() -> kas::runner::Result<()> {
         .map(|data: &AppData| &data.flame)
         .with_margin_style(MarginStyle::Large);
 
-    let left_column = column![config_box, misc_box, Separator::new(), palette_editor];
+    let left_column = column![
+        run_config_box, config_box, misc_box, Separator::new(), palette_editor
+    ];
 
     let root = column![
         Splitter::right(collection![left_column, image, function_editor]),
