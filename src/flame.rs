@@ -232,7 +232,7 @@ mod _serde {
     #[derive(Serialize, Deserialize)]
     #[serde(tag="version")]
     pub enum FlameSource {
-        #[serde(rename="1")]
+        #[serde(rename="2")]
         Valid {
             functions: Vec<FunctionEntry>,
             #[serde(default)]

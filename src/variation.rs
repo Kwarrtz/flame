@@ -1,4 +1,4 @@
-use nalgebra::Point2;
+use nalgebra::{Affine2, Point2};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,7 @@ pub enum Variation {
     Horseshoe,    // r
     Polar,        // r, theta
     Handkerchief, // r, theta
+    BrokenHandkerchief,
     Heart,        // r, theta
     Disc,         // r, theta
     BrokenDisc,   // r, theta
@@ -45,7 +46,23 @@ pub enum Variation {
     Noise,
     Gaussian,
     JuliaScope(f32, f32),
-    // Square,
+    Julia,
+    Waves,
+    Popcorn,
+    Rings,
+    Fan,
+    JuliaN(f32, f32),
+    Blur,
+    RadialBlur(f32),
+    Pie(f32, f32, f32),
+    Ngon(f32, f32, f32, f32),
+    Rectangles(f32, f32),
+    Arch,
+    Rays,
+    Blade,
+    Secant,
+    Twintrian,
+    Square,
 }
 
 use self::Variation::*;
@@ -59,8 +76,7 @@ impl<'a, R: Rng> RandVars<'a, R> {
         self.0.random()
     }
 
-    /// A randum number between 0 and pi
-    #[allow(unused)]
+    /// A random number that is either 0 or pi
     fn omega(&mut self) -> f32 {
         (self.0.random::<bool>() as u8) as f32 * PI
     }
@@ -72,7 +88,12 @@ impl<'a, R: Rng> RandVars<'a, R> {
 }
 
 impl Variation {
-    pub fn eval(self, rng: &mut impl Rng, arg: Point2<f32>) -> Point2<f32> {
+    pub fn eval(
+        self,
+        rng: &mut impl Rng,
+        affine_pre: &Affine2<f32>,
+        arg: Point2<f32>,
+    ) -> Point2<f32> {
         let (x, y) = (arg[0], arg[1]);
 
         // common intermediate values, memoized and lazily evaluated
@@ -95,19 +116,6 @@ impl Variation {
                     let theta__ = x.atan2(y);
                     theta_ = Some(theta__);
                     theta__
-                    // let theta__ = if y == 0.0 {
-                    //     if x == 0.0 {
-                    //         0.0
-                    //     } else if x > 0.0 {
-                    //         0.5 * PI
-                    //     } else {
-                    //         1.5 * PI
-                    //     }
-                    // } else {
-                    //     (x / y).atan()
-                    // };
-                    // theta_ = Some(theta__);
-                    // theta__
                 }
             }
         };
@@ -137,16 +145,20 @@ impl Variation {
             }
             Horseshoe => ((x - y) * (x + y) / r(), 2.0 * x * y / r()),
             Polar => (theta() * FRAC_1_PI, r() - 1.0),
-            Handkerchief => ((theta() + r()).sin(), (theta() - r()).cos()),
+            Handkerchief => (r() * (theta() + r()).sin(), r() * (theta() - r()).cos()),
+            BrokenHandkerchief => ((theta() + r()).sin(), (theta() - r()).cos()),
             Heart => (r() * (theta() * r()).sin(), -r() * (theta() * r()).cos()),
             Disc => (
                 theta() * FRAC_1_PI * (PI * r()).sin(),
                 theta() * FRAC_1_PI * (PI * r()).cos(),
             ),
             BrokenDisc => (theta() * FRAC_1_PI * (PI * r()).sin(), theta() * FRAC_1_PI),
-            Spiral => ((y + r().sin()) / r(), (x - r().cos()) / r()),
-            Hyperbolic => (x / r(), r() * y),
-            Diamond => (theta().sin() * r().cos(), theta().cos() * r().sin()),
+            Spiral => (
+                (y / r() + r().sin()) / r(),
+                (x / r() - r().cos()) / r(),
+            ),
+            Hyperbolic => (x / r() / r(), y),
+            Diamond => (x / r() * r().cos(), y / r() * r().sin()),
             Ex => {
                 let p0 = (theta() + r()).sin().powi(3);
                 let p1 = (theta() - r()).cos().powi(3);
@@ -164,8 +176,8 @@ impl Variation {
                 (x - 1.0).exp() * (PI * y).sin(),
             ),
             Power => {
-                let a = r().powf(x - 1.0);
-                (a * y, a * x)
+                let a = r().powf(x / r());
+                (a * y / r(), a * x / r())
             }
             Cosine => ((PI * x).cos() * y.cosh(), -(PI * x).sin() * y.sinh()),
             Cylinder => (x.sin(), y),
@@ -176,11 +188,11 @@ impl Variation {
             }
             Cross => {
                 let a = 1.0 / (x * x - y * y).abs();
-                (a * x, a * x)
+                (a * x, a * y)
             }
             Blob(h, l, w) => {
                 let a = r() * (l + (h - l) / 2.0 * (1.0 + (theta() * w).sin()));
-                (a * y, a * x)
+                (a * y / r(), a * x / r())
             }
             Pdj(a, b, c, d) => ((a * y).sin() - (b * x).cos(), (c * x).sin() - (d * y).cos()),
             Fan2(a, b) => {
@@ -188,14 +200,14 @@ impl Variation {
                 let t = theta() + b - p1 * (2. * theta() * b / p1).trunc();
                 let sgn = if t > p1 / 2. { -1. } else { 1. };
                 (
-                    r() * (theta() + sgn * p1 / 2.).cos(),
                     r() * (theta() + sgn * p1 / 2.).sin(),
+                    r() * (theta() + sgn * p1 / 2.).cos(),
                 )
             }
             Rings2(val) => {
                 let p = val * val;
                 let t = r() - 2. * p * ((r() + p) / 2. / p).trunc() + r() * (1. - p);
-                (t * x, t * y)
+                (t * x / r(), t * y / r())
             }
             Perspective(angle, dist) => {
                 let a = dist / (dist - y * angle.sin());
@@ -215,14 +227,109 @@ impl Variation {
             Gaussian => {
                 let a: f32 = (0..4).map(|_| rv.psi() - 2.).sum();
                 let psi5 = TAU * rv.psi();
-                (a * psi5.cos(), psi5.sin())
+                (a * psi5.cos(), a * psi5.sin())
             }
             JuliaScope(power, dist) => {
                 let p3 = (power.abs() * rv.psi()).trunc();
                 let t = (rv.lambda() * phi() + TAU * p3) / power;
                 let a = r().powf(dist / power);
                 (a * t.cos(), a * t.sin())
-            } // Square => (rv.psi() - 0.5, rv.psi() - 0.5),
+            }
+            Julia => {
+                let a = r().sqrt();
+                let sgn = rv.lambda();
+                let t = theta() / 2.0 + rv.omega();
+                (a * sgn * t.cos(), a * sgn * t.sin())
+            }
+            Waves => {
+                let mat = affine_pre.matrix();
+                let b = mat.m12;
+                let c2 = mat.m13 * mat.m13;
+                let e = mat.m22;
+                let f2 = mat.m23 * mat.m23;
+                (x + b * (y / c2).sin(), y + e * (x / f2).sin())
+            }
+            Popcorn => {
+                let mat = affine_pre.matrix();
+                (
+                    x + mat.m13 * (3.0 * y).tan().sin(),
+                    y + mat.m23 * (3.0 * x).tan().sin(),
+                )
+            }
+            Rings => {
+                let c2 = affine_pre.matrix().m13.powi(2);
+                let t = (r() + c2) % (2.0 * c2) - c2 + r() * (1.0 - c2);
+                (t * x / r(), t * y / r())
+            }
+            Fan => {
+                let mat = affine_pre.matrix();
+                let t = PI * mat.m13 * mat.m13;
+                let sgn = if (theta() + mat.m23) % t > t / 2.0 {
+                    -1.0
+                } else {
+                    1.0
+                };
+                let a = theta() + sgn * t / 2.0;
+                (r() * a.cos(), r() * a.sin())
+            }
+            JuliaN(power, dist) => {
+                let p3 = (power.abs() * rv.psi()).trunc();
+                let t = (phi() + TAU * p3) / power;
+                let a = r().powf(dist / power);
+                (a * t.cos(), a * t.sin())
+            }
+            Blur => {
+                let a = rv.psi();
+                let t = TAU * rv.psi();
+                (a * t.cos(), a * t.sin())
+            }
+            RadialBlur(angle) => {
+                let p1 = angle * PI / 2.0;
+                let t1: f32 = (0..4).map(|_| rv.psi() - 2.0).sum();
+                let t2 = phi() + t1 * p1.sin();
+                let t3 = t1 * p1.cos() - 1.0;
+                (r() * t2.cos() + t3 * x, r() * t2.sin() + t3 * y)
+            }
+            Pie(slices, rotation, thickness) => {
+                let t1 = (rv.psi() * slices + 0.5).trunc();
+                let t2 = rotation + (TAU / slices) * (t1 + rv.psi() * thickness);
+                let a = rv.psi();
+                (a * t2.cos(), a * t2.sin())
+            }
+            Ngon(power, sides, corners, circle) => {
+                let p2 = TAU / sides;
+                let t3 = phi() - p2 * (phi() / p2).floor();
+                let t4 = if t3 > p2 / 2.0 { t3 } else { t3 - p2 };
+                let k = (corners * (1.0 / t4.cos() - 1.0) + circle)
+                    / r().powf(power);
+                (k * x, k * y)
+            }
+            Rectangles(rx, ry) => (
+                (2.0 * (x / rx).floor() + 1.0) * rx - x,
+                (2.0 * (y / ry).floor() + 1.0) * ry - y,
+            ),
+            Arch => {
+                let a = rv.psi() * PI;
+                let s = a.sin();
+                (s, s * s / a.cos())
+            }
+            Rays => {
+                let a = (rv.psi() * PI).tan() / (x * x + y * y);
+                (a * x.cos(), a * y.sin())
+            }
+            Blade => {
+                let a = rv.psi() * r();
+                let (s, c) = a.sin_cos();
+                (x * (c + s), x * (c - s))
+            }
+            Secant => (x, r().cos().recip()),
+            Twintrian => {
+                let a = rv.psi() * r();
+                let s = a.sin();
+                let t = (s * s).log10() + a.cos();
+                (x * t, x * (t - PI * s))
+            }
+            Square => (rv.psi() - 0.5, rv.psi() - 0.5),
         };
 
         Point2::new(xo, yo)

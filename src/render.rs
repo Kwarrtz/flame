@@ -56,6 +56,8 @@ impl<T: Float + NumAssign + Copy> Buffer<T> {
     pub fn normalize(&mut self) {
         let max = self.buckets.iter().cloned().reduce(Bucket::max).unwrap();
         let max_rgb = max.iter_rgb().cloned().reduce(T::max).unwrap();
+        // avoid corruption, particularly for blank images
+        if !max_rgb.is_normal() { return; }
         for bucket in self.buckets.iter_mut() {
             bucket.alpha /= max.alpha;
             for c in bucket.iter_rgb_mut() {

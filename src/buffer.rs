@@ -31,6 +31,8 @@ impl<T: Copy> Buffer<T> {
     /// Get the bucket at a `Point`, i.e., rounding its components
     /// down to the nearest integer
     pub fn at_mut(&mut self, p: Point2<f32>) -> Option<&mut Bucket<T>> {
+        // avoid saturating to 0 during cast
+        if p[0] < 0.0 || p[1] < 0.0 { return None; }
         self.get_mut(p[0] as usize, p[1] as usize)
     }
 

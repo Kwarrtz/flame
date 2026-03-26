@@ -230,7 +230,7 @@ where
         let entry: FunctionEntry = rng.sample(&cfg.flame_distr.func_distr);
         flame.functions.push(entry);
     }
-    if rng.random::<f32>() < cfg.function_insertion_rate && !flame.functions.is_empty() {
+    if rng.random::<f32>() < cfg.function_insertion_rate && flame.functions.len() > 1 {
         let idx = rng.random_range(0..flame.functions.len());
         flame.functions.remove(idx);
     }

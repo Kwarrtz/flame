@@ -79,7 +79,7 @@ impl Function {
     ///
     /// The rng is used for stochastic `Variation`s.
     pub fn eval(&self, rng: &mut impl Rng, arg: Point2<f32>) -> Point2<f32> {
-        self.affine_post * self.variation.eval(rng, self.affine_pre * arg)
+        self.affine_post * self.variation.eval(rng, &self.affine_pre, self.affine_pre * arg)
     }
 }
 
