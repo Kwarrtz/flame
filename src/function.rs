@@ -36,19 +36,19 @@ impl FunctionEntry {
         color: f32,
         color_speed: f32,
     ) -> Result<FunctionEntry, FunctionEntryError> {
-        if color > 1.0 || color < 0.0 {
+        if !(0.0..=1.0).contains(&color) {
             return Err(FunctionEntryError::Color);
         }
 
-        if color_speed > 1.0 || color_speed < 0.0 {
+        if !(0.0..=1.0).contains(&color_speed) {
             return Err(FunctionEntryError::ColorSpeed);
         }
 
         Ok(FunctionEntry {
-            weight: weight,
-            color: color,
-            color_speed: color_speed,
-            function: function,
+            weight,
+            color,
+            color_speed,
+            function,
         })
     }
 }
@@ -143,7 +143,7 @@ mod _serde {
 
         fn try_from(src: FunctionEntrySource) -> Result<Self, Self::Error> {
             FunctionEntry::new(
-                src.function.into(),
+                src.function,
                 src.weight,
                 src.color,
                 src.color_speed.unwrap_or(0.5),

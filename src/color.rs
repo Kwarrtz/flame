@@ -80,7 +80,7 @@ impl Palette {
 
             Some(keys__) => {
                 let keys__ = keys__.into_iter();
-                if keys__.clone().any(|k| k < 0.0 || k > 1.0) {
+                if keys__.clone().any(|k| !(0.0..=1.0).contains(&k)) {
                     return Err(PaletteError::OutOfBounds);
                 }
                 if keys__
@@ -106,7 +106,7 @@ impl Palette {
 
     /// Sample the `Color` at point `c` along the `Palette`
     pub fn sample(&self, c: f32) -> Option<Color> {
-        if c < 0.0 || c > 1.0 {
+        if !(0.0..=1.0).contains(&c) {
             return None;
         };
 
@@ -167,10 +167,10 @@ impl Palette {
         } else if index == self.len() - 1 {
             1.0
         } else {
-            self.keys.get(index - 1)?.clone()
+            *self.keys.get(index - 1)?
         };
 
-        Some((self.colors.get(index)?.clone(), key))
+        Some((*self.colors.get(index)?, key))
     }
 
     pub fn get_mut(&mut self, index: usize) -> (Option<&mut Color>, Option<&mut f32>) {

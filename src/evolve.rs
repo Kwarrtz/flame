@@ -272,7 +272,7 @@ fn perturb_affine(affine: &Affine2<f32>, stddev: f32, rng: &mut impl Rng) -> Aff
 }
 
 fn mutate_variation(var: &mut Variation, stddev: f32, rng: &mut impl Rng) {
-    let (discr, mut params) = var.clone().deconstruct();
+    let (discr, mut params) = (*var).deconstruct();
     if params.is_empty() {
         return;
     }

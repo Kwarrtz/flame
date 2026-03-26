@@ -2,7 +2,6 @@
 name = "flame"
 # version = "0.6.1"
 authors = ["Dathan Ault-McCoy"]
-about = "An experimental fractal flame generator"
 edition = "2024"
 
 [profile.release]
@@ -26,6 +25,7 @@ flame_macro = { path = "./flame_macro" }
 rfd = "0.17"
 rusqlite = "0.39"
 indicatif = "0.18"
+futures="0.3"
 
 [dependencies.xilem]
 git = "https://github.com/linebender/xilem"

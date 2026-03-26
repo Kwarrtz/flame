@@ -120,8 +120,7 @@ impl Buffer<u8> {
         let raw = self
             .buckets
             .iter()
-            .map(|b| b.iter_rgb().cloned())
-            .flatten()
+            .flat_map(|b| b.iter_rgb().cloned())
             .collect();
         ImageBuffer::from_raw(self.width as u32, self.height as u32, raw)
             .expect("incorrect image buffer size")

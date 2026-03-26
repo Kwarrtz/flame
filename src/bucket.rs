@@ -114,6 +114,12 @@ impl<T> Bucket<T> {
     }
 }
 
+impl<T: Zero> Default for Bucket<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Zero> Bucket<T> {
     pub fn new() -> Self {
         Bucket {

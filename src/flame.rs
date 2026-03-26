@@ -154,7 +154,7 @@ impl Flame {
             }
         }
 
-        &self.functions.iter().last().unwrap()
+        self.functions.iter().last().unwrap()
     }
 
     /// Convert from string in JSON format

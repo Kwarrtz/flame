@@ -3,6 +3,7 @@ use std::{collections::HashSet, ops::RangeInclusive};
 use rand::distr::StandardUniform;
 use rand::distr::uniform::Uniform;
 use rusqlite::Connection;
+use futures::future::FutureExt;
 
 const DB_PATH: &str = "flames.db";
 
@@ -226,13 +227,12 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
                 let render_cfg = state.config.to_render_config().unwrap();
                 let pop = state.pop.clone();
                 let selected = state.selected.clone();
-                async move {
+                xilem::tokio::task::spawn_blocking(move || {
                     let next_pop = if pop.is_empty() {
                         evolve_init(&evolve_config)
                     } else {
                         evolve_step(pop, selected, &evolve_config)
                     };
-
                     let images = next_pop
                         .iter()
                         .map(|flame| {
@@ -256,9 +256,8 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
                             }
                         })
                         .collect::<Vec<_>>();
-
                     let _ = proxy.message((next_pop, images));
-                }
+                }).map(Result::unwrap)
             },
             |data: &mut AppData, (next_pop, images)| {
                 // save outgoing generation with its selection state

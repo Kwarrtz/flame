@@ -12,7 +12,7 @@ use super::Flame;
 
 impl Distribution<VariationDiscriminant> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> VariationDiscriminant {
-        VARIATION_DISCRIMINANTS.choose(rng).unwrap().clone()
+        *VARIATION_DISCRIMINANTS.choose(rng).unwrap()
     }
 }
 

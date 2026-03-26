@@ -368,7 +368,7 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
     let variation = ComboBox::new_msg(
         VARIATION_DISCRIMINANTS
             .iter()
-            .map(|v| (format!("{v:?}"), v.clone())),
+            .map(|v| (format!("{v:?}"), *v)),
         move |_, flame: &Flame| {
             flame
                 .functions
