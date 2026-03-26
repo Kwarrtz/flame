@@ -3,7 +3,6 @@ use std::{collections::HashSet, ops::RangeInclusive};
 use rand::distr::StandardUniform;
 use rand::distr::uniform::Uniform;
 use rusqlite::Connection;
-use futures::future::FutureExt;
 
 const DB_PATH: &str = "flames.db";
 
@@ -220,63 +219,63 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
         data.processing = true
     });
     let t = task_raw(
-            move |proxy, state: &mut AppData| {
-                let evolve_config: DefaultEvolveConfig =
-                    state.config.to_evolve_config().unwrap();
-                let run_cfg = state.config.to_run_config().unwrap();
-                let render_cfg = state.config.to_render_config().unwrap();
-                let pop = state.pop.clone();
-                let selected = state.selected.clone();
-                xilem::tokio::task::spawn_blocking(move || {
-                    let next_pop = if pop.is_empty() {
-                        evolve_init(&evolve_config)
-                    } else {
-                        evolve_step(pop, selected, &evolve_config)
-                    };
-                    let images = next_pop
-                        .iter()
-                        .map(|flame| {
-                            let mut img_buf =
-                                vec![0u8; run_cfg.width * run_cfg.height * 4];
-                            flame
-                                .run(run_cfg)
-                                .render_raw_rgba(
-                                    &mut img_buf,
-                                    render_cfg,
-                                    run_cfg.iters,
-                                );
-                            ImageData {
-                                data: Blob::new(std::sync::Arc::new(
-                                    img_buf.into_boxed_slice(),
-                                )),
-                                format: xilem::ImageFormat::Rgba8,
-                                alpha_type: xilem::masonry::peniko::ImageAlphaType::Alpha,
-                                width: run_cfg.width as u32,
-                                height: run_cfg.height as u32,
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    let _ = proxy.message((next_pop, images));
-                }).map(Result::unwrap)
-            },
-            |data: &mut AppData, (next_pop, images)| {
-                // save outgoing generation with its selection state
-                // before overwriting; skip generation 0 (empty pop)
-                if !data.pop.is_empty() {
-                    log_gen(
-                        data.timestamp,
-                        data.generation,
-                        &data.selected,
-                        &data.pop,
-                    );
-                }
-                data.pop = next_pop;
-                data.images = images;
-                data.selected.clear();
-                data.processing = false;
-                data.generation += 1;
-            },
-        );
+        move |proxy, state: &mut AppData| {
+            let evolve_config: DefaultEvolveConfig =
+                state.config.to_evolve_config().unwrap();
+            let run_cfg = state.config.to_run_config().unwrap();
+            let render_cfg = state.config.to_render_config().unwrap();
+            let pop = state.pop.clone();
+            let selected = state.selected.clone();
+            async move { xilem::tokio::task::spawn_blocking(move || {
+                let next_pop = if pop.is_empty() {
+                    evolve_init(&evolve_config)
+                } else {
+                    evolve_step(pop, selected, &evolve_config)
+                };
+                let images = next_pop
+                    .iter()
+                    .map(|flame| {
+                        let mut img_buf =
+                            vec![0u8; run_cfg.width * run_cfg.height * 4];
+                        flame
+                            .run(run_cfg)
+                            .render_raw_rgba(
+                                &mut img_buf,
+                                render_cfg,
+                                run_cfg.iters,
+                            );
+                        ImageData {
+                            data: Blob::new(std::sync::Arc::new(
+                                img_buf.into_boxed_slice(),
+                            )),
+                            format: xilem::ImageFormat::Rgba8,
+                            alpha_type: xilem::masonry::peniko::ImageAlphaType::Alpha,
+                            width: run_cfg.width as u32,
+                            height: run_cfg.height as u32,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let _ = proxy.message((next_pop, images));
+            }).await.unwrap();
+        } },
+        |data: &mut AppData, (next_pop, images)| {
+            // save outgoing generation with its selection state
+            // before overwriting; skip generation 0 (empty pop)
+            if !data.pop.is_empty() {
+                log_gen(
+                    data.timestamp,
+                    data.generation,
+                    &data.selected,
+                    &data.pop,
+                );
+            }
+            data.pop = next_pop;
+            data.images = images;
+            data.selected.clear();
+            data.processing = false;
+            data.generation += 1;
+        },
+    );
 
     fork(b, data.processing.then_some(t))
 }
