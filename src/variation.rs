@@ -62,7 +62,7 @@ pub enum Variation {
     Blade,
     Secant,
     Twintrian,
-    Square,
+    // Square,
 }
 
 use self::Variation::*;
@@ -329,7 +329,7 @@ impl Variation {
                 let t = (s * s).log10() + a.cos();
                 (x * t, x * (t - PI * s))
             }
-            Square => (rv.psi() - 0.5, rv.psi() - 0.5),
+            // Square => (rv.psi() - 0.5, rv.psi() - 0.5),
         };
 
         Point2::new(xo, yo)
