@@ -114,108 +114,120 @@ fn render_and_save(
     Ok(())
 }
 
-fn run() -> Result<(), Error> {
-    let cli = Cli::parse();
+fn run_render(args: RenderArgs) -> Result<(), Error> {
+    let run_cfg = args.run_config();
+    let render_cfg = args.render_config();
+    
+    println!("Rendering flames...");
 
-    match cli.command {
-        Commands::Render(args) => {
-            let run_cfg = args.run_config();
-            let render_cfg = args.render_config();
-            
-            println!("Rendering {} flame(s)...", args.input.len());
+    let progress_bar = indicatif::ProgressBar::new(args.input.len() as u64);
 
-            let before_run = std::time::Instant::now();
+    let before_run = std::time::Instant::now();
 
-            if args.input.len() == 1 && let Some(out_path) = args.output {
-                // output filename is specified
-                let flame = Flame::from_file(&args.input[0])?;
-                render_and_save(flame, out_path, run_cfg, render_cfg)?;
+    if args.input.len() == 1 && let Some(out_path) = args.output {
+        // output filename is specified
+        let flame = Flame::from_file(&args.input[0])?;
+        render_and_save(flame, out_path, run_cfg, render_cfg)?;
+    } else {
+        // create the output directory, if it's specified and doesn't exist
+        if let Some(ref out_dir) = args.output && !out_dir.exists() {
+            std::fs::create_dir(out_dir).map_err(Error::DirectoryWriteError)?;
+        }
+
+        for in_path in args.input {
+            let out_path = if let Some(ref out_dir) = args.output {
+                // output directory is specified
+                out_dir
+                    .with_file_name(in_path.file_name().expect("input must be a path to a file"))
+                    .with_extension(&args.filetype)
             } else {
-                // create the output directory, if it's specified and doesn't exist
-                if let Some(ref out_dir) = args.output && !out_dir.exists() {
-                    std::fs::create_dir(out_dir).map_err(Error::DirectoryWriteError)?;
-                }
+                // no output destination specified
+                in_path.with_extension(&args.filetype)
+            };
 
-                for in_path in args.input {
-                    let out_path = if let Some(ref out_dir) = args.output {
-                        // output directory is specified
-                        out_dir
-                            .with_file_name(in_path.file_name().expect("input must be a path to a file"))
-                            .with_extension(&args.filetype)
-                    } else {
-                        // no output destination specified
-                        in_path.with_extension(&args.filetype)
-                    };
+            let flame = Flame::from_file(in_path)?;
+            render_and_save(flame, out_path, run_cfg, render_cfg)?;
 
-                    let flame = Flame::from_file(in_path)?;
-                    render_and_save(flame, out_path, run_cfg, render_cfg)?;
-                }
-            }
-
-            let dur = before_run.elapsed();
-
-            println!(
-                "Completed! Rendered in {}.{:03} seconds.",
-                dur.as_secs(),
-                dur.subsec_millis()
-            );
+            progress_bar.inc(1);
         }
+    }
 
-        Commands::Random(args) => {
-            let mut rng = rand::rng();
+    let dur = before_run.elapsed();
 
-            if !args.output.exists() {
-                std::fs::create_dir(&args.output).map_err(Error::DirectoryWriteError)?;
-            }
+    progress_bar.finish();
 
-            println!("Generating flames...");
-
-            let before_run = std::time::Instant::now();
-
-            let mut index = 1;
-            for _ in 1..=args.num {
-                // find the next available index in the directory
-                let mut out_path: PathBuf;
-                loop {
-                    out_path = args.output
-                        .join(PathBuf::from(index.to_string()))
-                        .with_extension(&args.filetype);
-
-                    if !std::fs::exists(&out_path).map_err(Error::FileWriteError)? {
-                        break;
-                    }
-
-                    index += 1;
-                }
-
-                let mut distr = random::DefaultFlameDistribution::default();
-                distr.func_distr.aff_distr.uniformity = args.uniformity;
-                distr.func_distr.aff_distr.skewness = args.skewness;
-                distr.func_num_distr = Uniform::try_from(
-                    args.num_functions[0]..=args.num_functions[1],
-                ).unwrap();
-
-                let flame = rng.sample(distr);
-
-                flame.save(out_path)?;
-            }
-
-            let dur = before_run.elapsed();
-
-            println!(
-                "Completed! Generated in {}.{:03} seconds. Output written to '{}'",
-                dur.as_secs(),
-                dur.subsec_millis(),
-                args.output.display()
-            );
-        }
-    };
+    println!("Completed in {}.{:02} seconds",
+        dur.as_secs(),
+        dur.subsec_millis()
+    );
 
     Ok(())
 }
 
+fn run_random(args: RandomArgs) -> Result<(), Error> {
+    let mut rng = rand::rng();
+
+    if !args.output.exists() {
+        std::fs::create_dir(&args.output).map_err(Error::DirectoryWriteError)?;
+    }
+
+    println!("Generating flames...");
+
+    let progress_bar = indicatif::ProgressBar::new(args.num as u64);
+
+    let before_run = std::time::Instant::now();
+
+    let mut index = 1;
+    for _ in 1..=args.num {
+        // find the next available index in the directory
+        let mut out_path: PathBuf;
+        loop {
+            out_path = args.output
+                .join(PathBuf::from(index.to_string()))
+                .with_extension(&args.filetype);
+
+            if !std::fs::exists(&out_path).map_err(Error::FileWriteError)? {
+                break;
+            }
+
+            index += 1;
+        }
+
+        let mut distr = random::DefaultFlameDistribution::default();
+        distr.func_distr.aff_distr.uniformity = args.uniformity;
+        distr.func_distr.aff_distr.skewness = args.skewness;
+        distr.func_num_distr = Uniform::try_from(
+            args.num_functions[0]..=args.num_functions[1],
+        ).unwrap();
+
+        let flame = rng.sample(distr);
+
+        flame.save(out_path)?;
+
+        progress_bar.inc(1);
+    }
+
+    let dur = before_run.elapsed();
+
+    progress_bar.finish();
+
+    println!(
+        "Completed in {}.{:03} seconds, output written to '{}'",
+        dur.as_secs(),
+        dur.subsec_millis(),
+        args.output.display()
+    );
+   
+    Ok(())
+}
+
 fn main() {
-    if let Err(e) = run() {
+    let cli = Cli::parse();
+    let res = match cli.command {
+        Commands::Render(args) => run_render(args),
+        Commands::Random(args) => run_random(args)
+    };
+    if let Err(e) = res {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }

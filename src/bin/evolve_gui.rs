@@ -299,7 +299,8 @@ fn save_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
             }
             let to_save = data.pop.iter()
                 .enumerate()
-                .filter(|(i, _)| data.selected.contains(i))
+                .filter(|(i, _)|
+                    data.selected.is_empty() || data.selected.contains(i))
                 .map(|(_, f)| f)
                 .enumerate();
             for (i, flame) in to_save {
