@@ -1,6 +1,5 @@
 use std::{collections::HashSet, ops::RangeInclusive};
 
-use rand::distr::StandardUniform;
 use rand::distr::uniform::Uniform;
 use rusqlite::Connection;
 
@@ -14,7 +13,7 @@ use xilem::{
 
 use flame::{RunConfig, random::{
     AffineDistribution, DefaultFlameDistribution, FlameDistribution,
-    FunctionDistribution, PaletteDistribution, VariationDistribution,
+    FunctionDistribution, PaletteDistribution,
 }};
 use flame::{
     Flame, RenderConfig,
@@ -22,7 +21,7 @@ use flame::{
 };
 
 type DefaultEvolveConfig = EvolveConfig<
-    FunctionDistribution<AffineDistribution, VariationDistribution<StandardUniform>>,
+    FunctionDistribution<AffineDistribution>,
     Uniform<i8>,
     Uniform<usize>,
     PaletteDistribution<RangeInclusive<usize>>,
@@ -44,7 +43,8 @@ pub struct ConfigFields {
     pub palette_key_mutability: String,
     pub palette_color_mutability: String,
     pub affine_mutability: String,
-    pub variation_param_mutability: String,
+    pub variation_float_param_mutability: String,
+    pub variation_int_param_mut_rate: String,
     pub weight_mutability: String,
     pub color_mutability: String,
     pub color_speed_mutability: String,
@@ -94,7 +94,8 @@ impl ConfigFields {
             palette_key_mutability: parse_f32!(palette_key_mutability),
             palette_color_mutability: parse_f32!(palette_color_mutability),
             affine_mutability: parse_f32!(affine_mutability),
-            variation_param_mutability: parse_f32!(variation_param_mutability),
+            variation_float_param_mutability: parse_f32!(variation_float_param_mutability),
+            variation_int_param_mut_rate: parse_f32!(variation_int_param_mut_rate),
             weight_mutability: parse_f32!(weight_mutability),
             color_mutability: parse_f32!(color_mutability),
             color_speed_mutability: parse_f32!(color_speed_mutability),
@@ -132,26 +133,27 @@ impl Default for ConfigFields {
         ConfigFields {
             flame_distr: Default::default(),
             palette_key_mutability: String::from("0.04"),
-            palette_color_mutability: String::from("10"),
+            palette_color_mutability: String::from("8"),
             affine_mutability: String::from("0.05"),
-            variation_param_mutability: String::from("0.1"),
+            variation_float_param_mutability: String::from("0.1"),
+            variation_int_param_mut_rate: String::from("0.15"),
             weight_mutability: String::from("0.1"),
             color_mutability: String::from("0.1"),
             color_speed_mutability: String::from("0.05"),
             bounds_mutability: String::from("0.1"),
             function_insertion_rate: String::from("0.05"),
             color_insertion_rate: String::from("0.1"),
-            symmetry_replacement_rate: String::from("0"),
-            last_replacement_rate: String::from("0"),
+            symmetry_replacement_rate: String::from("0.1"),
+            last_replacement_rate: String::from("0.05"),
             pop_size: String::from("100"),
             recomb_rate: String::from("0.5"),
             immaculate_rate: String::from("0.01"),
             fitness_weight: String::from("3"),
             width: String::from("250"),
             height: String::from("250"),
-            iters: String::from("10000000"),
+            iters: String::from("30000000"),
             threads: String::from("10"),
-            brightness: String::from("20"),
+            brightness: String::from("22"),
         }
     }
 }
@@ -335,10 +337,17 @@ fn config_panel(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
             }),
         )),
         flex_row((
-            label("variation param"),
+            label("variation float param"),
             text_input(
-                c.variation_param_mutability.clone(),
-                |d: &mut AppData, v| d.config.variation_param_mutability = v,
+                c.variation_float_param_mutability.clone(),
+                |d: &mut AppData, v| d.config.variation_float_param_mutability = v,
+            ),
+        )),
+        flex_row((
+            label("variation int param rate"),
+            text_input(
+                c.variation_int_param_mut_rate.clone(),
+                |d: &mut AppData, v| d.config.variation_int_param_mut_rate = v,
             ),
         )),
         flex_row((

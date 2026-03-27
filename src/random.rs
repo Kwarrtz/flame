@@ -1,6 +1,6 @@
 use std::f32::consts::TAU;
 
-use nalgebra::{Affine2, Matrix3, Rotation2, Similarity2, Transform, Vector2};
+use nalgebra::{Affine2, Matrix3, Rotation2, Similarity2, Vector2};
 use rand::{distr::{uniform::{SampleRange, Uniform}, Distribution, StandardUniform}, seq::IndexedRandom, Rng};
 
 use crate::bounds::Bounds;
@@ -16,28 +16,24 @@ impl Distribution<VariationDiscriminant> for StandardUniform {
     }
 }
 
-#[derive(Clone)]
-pub struct VariationDistribution<D: Distribution<f32>>(pub D);
-
-impl<D: Distribution<f32>> Distribution<Variation> for VariationDistribution<D> {
+impl Distribution<Variation> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Variation {
         let discr: VariationDiscriminant = rng.random();
-        let params = (&self.0).sample_iter(rng)
-            .take(discr.num_parameters());
-        Variation::build(discr, params).unwrap()
-    }
-}
-
-#[derive(Clone)]
-pub struct NaiveAffineDistribution<D: Distribution<f32>>(pub D);
-
-impl<D: Distribution<f32>> Distribution<Affine2<f32>> for NaiveAffineDistribution<D> {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Affine2<f32> {
-        Transform::from_matrix_unchecked(Matrix3::new(
-            self.0.sample(rng), self.0.sample(rng), self.0.sample(rng),
-            self.0.sample(rng), self.0.sample(rng), self.0.sample(rng),
-            0., 0., 1.
-        ))
+        let (int_ranges, float_ranges) = discr.parameter_ranges();
+        let int_params = int_ranges.iter()
+            .map(|range| match range {
+                Some(r) => rng.random_range(r.clone()),
+                None => rng.random_range(1..6),
+            })
+            .collect();
+        let float_params = float_ranges.iter()
+            .map(|range| match range {
+                Some(r) => rng.random_range(r.clone()),
+                None => rng.random_range(-1.0..1.0)
+            })
+            .collect();
+        Variation::try_from(DynamicVariation { discriminant: discr, int_params, float_params })
+            .unwrap()
     }
 }
 
@@ -70,30 +66,27 @@ impl Distribution<Affine2<f32>> for AffineDistribution {
 }
 
 #[derive(Clone)]
-pub struct FunctionDistribution<DA,DV> {
+pub struct FunctionDistribution<DA> {
     pub aff_distr: DA,
-    pub var_distr: DV
 }
 
-impl<DA,DV> Distribution<Function> for FunctionDistribution<DA,DV>
+impl<DA> Distribution<Function> for FunctionDistribution<DA>
 where
     DA: Distribution<Affine2<f32>>,
-    DV: Distribution<Variation>
 {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Function {
         let affine_pre = self.aff_distr.sample(rng);
         let affine_post = self.aff_distr.sample(rng);
-        let variation = self.var_distr.sample(rng);
+        let variation = rng.random();
         Function {
             variation, affine_pre, affine_post
         }
     }
 }
 
-impl<DA,DV> Distribution<FunctionEntry> for FunctionDistribution<DA, DV>
+impl<DA> Distribution<FunctionEntry> for FunctionDistribution<DA>
 where
     DA: Distribution<Affine2<f32>>,
-    DV: Distribution<Variation>
 {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> FunctionEntry {
         FunctionEntry::new(self.sample(rng), rng.random(), rng.random(), rng.random()).unwrap()
@@ -127,7 +120,7 @@ pub struct FlameDistribution<DF,DS,DN,DP> {
 
 /// The default concrete `FlameDistribution` type, matching the defaults used in the CLI.
 pub type DefaultFlameDistribution = FlameDistribution<
-    FunctionDistribution<AffineDistribution, VariationDistribution<StandardUniform>>,
+    FunctionDistribution<AffineDistribution>,
     Uniform<i8>,
     Uniform<usize>,
     PaletteDistribution<std::ops::RangeInclusive<usize>>,
@@ -138,7 +131,6 @@ impl Default for DefaultFlameDistribution {
         FlameDistribution {
             func_distr: FunctionDistribution {
                 aff_distr: AffineDistribution { uniformity: 0.5, skewness: 0.5 },
-                var_distr: VariationDistribution(StandardUniform),
             },
             symmetry_distr: Uniform::try_from(1i8..=1i8).unwrap(),
             func_num_distr: Uniform::try_from(4usize..=7usize).unwrap(),

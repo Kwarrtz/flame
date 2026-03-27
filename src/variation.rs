@@ -7,62 +7,65 @@ use std::f32::consts::{FRAC_1_PI, PI, TAU};
 use flame_macro::variation;
 
 /// A non-linear transformation, which can be stochastic and depend
-/// on the coefficients of the associated affine post-transform
+/// on the coefficients of the associated affine pre-transform
 /// or on constant parameters
 #[variation]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Variation {
     Id,
     Sinusoidal,
-    Spherical,    // r2
-    Swirl,        // r
-    Horseshoe,    // r
-    Polar,        // r, theta
-    Handkerchief, // r, theta
+    Spherical,
+    Swirl,
+    Horseshoe,
+    Polar,
+    Handkerchief,
     BrokenHandkerchief,
-    Heart,        // r, theta
-    Disc,         // r, theta
-    BrokenDisc,   // r, theta
-    Spiral,       // r, theta
-    Hyperbolic,   // r, theta
-    Diamond,      // r, theta
-    Ex,           // r, theta
-    Bent,         // r
-    Fisheye,      // r
+    Heart,
+    Disc,
+    BrokenDisc,
+    Spiral,
+    Hyperbolic,
+    Diamond,
+    Ex,
+    Bent,
+    Fisheye,
     Eyefish,
     Exponential,
-    Power, // r, theta
+    Power,
     Cosine,
     Cylinder,
     Tangent,
-    Bubble, // r2
+    Bubble,
     Cross,
-    Blob(f32, f32, f32), // theta
-    Pdj(f32, f32, f32, f32),
-    Fan2(f32, f32), // theta
-    Rings2(f32),    // theta
-    Perspective(f32, f32),
-    Curl(f32, f32),
+    Secant,
+    // stochastic: use random variables
     Noise,
     Gaussian,
-    JuliaScope(f32, f32),
     Julia,
+    Blur,
+    Arch,
+    Rays,
+    Blade,
+    Twintrian,
+    Square,
+    // dependent: use affine pre-transform coefficients
     Waves,
     Popcorn,
     Rings,
     Fan,
-    JuliaN(f32, f32),
-    Blur,
-    RadialBlur(f32),
-    Pie(f32, f32, f32),
-    Ngon(f32, f32, f32, f32),
-    Rectangles(f32, f32),
-    Arch,
-    Rays,
-    Blade,
-    Secant,
-    Twintrian,
-    // Square,
+    // parametric
+    Blob(#[range(1..7)] i8, f32, f32),
+    Pdj(f32, f32, f32, f32),
+    Fan2(f32, f32),
+    Rings2(#[range(0.01..2.0)] f32),
+    Perspective(f32, #[range(0.1..5.0)] f32),
+    Curl(f32, f32),
+    JuliaN(#[range(1..9)] i8, f32),
+    JuliaScope(#[range(1..9)] i8, f32),
+    RadialBlur(#[range(-1.0..1.0)] f32),
+    Pie(#[range(1..7)] i8, #[range(0.0..TAU)] f32, #[range(0.0..1.0)] f32),
+    Ngon(#[range(3..9)] i8, f32, f32, f32),
+    Rectangles(#[range(0.01..2.0)] f32, #[range(0.01..2.0)] f32),
 }
 
 use self::Variation::*;
@@ -81,7 +84,7 @@ impl<'a, R: Rng> RandVars<'a, R> {
         (self.0.random::<bool>() as u8) as f32 * PI
     }
 
-    /// A randum number between -1 and 1
+    /// A randum number that is either -1 or 1
     fn lambda(&mut self) -> f32 {
         (2 * self.0.random::<bool>() as u8 - 1) as f32
     }
@@ -133,6 +136,7 @@ impl Variation {
         let mut rv = RandVars(rng);
 
         let (xo, yo) = match self {
+            // normal
             Id => (x, y),
             Sinusoidal => (x.sin(), y.sin()),
             Spherical => {
@@ -190,35 +194,8 @@ impl Variation {
                 let a = 1.0 / (x * x - y * y).abs();
                 (a * x, a * y)
             }
-            Blob(h, l, w) => {
-                let a = r() * (l + (h - l) / 2.0 * (1.0 + (theta() * w).sin()));
-                (a * y / r(), a * x / r())
-            }
-            Pdj(a, b, c, d) => ((a * y).sin() - (b * x).cos(), (c * x).sin() - (d * y).cos()),
-            Fan2(a, b) => {
-                let p1 = PI * a * a;
-                let t = theta() + b - p1 * (2. * theta() * b / p1).trunc();
-                let sgn = if t > p1 / 2. { -1. } else { 1. };
-                (
-                    r() * (theta() + sgn * p1 / 2.).sin(),
-                    r() * (theta() + sgn * p1 / 2.).cos(),
-                )
-            }
-            Rings2(val) => {
-                let p = val * val;
-                let t = r() - 2. * p * ((r() + p) / 2. / p).trunc() + r() * (1. - p);
-                (t * x / r(), t * y / r())
-            }
-            Perspective(angle, dist) => {
-                let a = dist / (dist - y * angle.sin());
-                (a * x, a * y * angle.cos())
-            }
-            Curl(c1, c2) => {
-                let t1 = 1. + c1 * x + c2 * (x * x - y * y);
-                let t2 = c1 * y + 2. * c2 * x * y;
-                let a = 1. / (t1 * t1 + t2 * t2);
-                (a * (x * t1 + y * t2), a * (y * t1 - x * t2))
-            }
+            Secant => (x, r().cos().recip()),
+            // stochastic
             Noise => {
                 let psi1 = rv.psi();
                 let psi2 = TAU * rv.psi();
@@ -229,18 +206,39 @@ impl Variation {
                 let psi5 = TAU * rv.psi();
                 (a * psi5.cos(), a * psi5.sin())
             }
-            JuliaScope(power, dist) => {
-                let p3 = (power.abs() * rv.psi()).trunc();
-                let t = (rv.lambda() * phi() + TAU * p3) / power;
-                let a = r().powf(dist / power);
-                (a * t.cos(), a * t.sin())
-            }
             Julia => {
                 let a = r().sqrt();
                 let sgn = rv.lambda();
                 let t = theta() / 2.0 + rv.omega();
                 (a * sgn * t.cos(), a * sgn * t.sin())
             }
+            Blur => {
+                let a = rv.psi();
+                let t = TAU * rv.psi();
+                (a * t.cos(), a * t.sin())
+            }
+            Arch => {
+                let a = rv.psi() * PI;
+                let s = a.sin();
+                (s, s * s / a.cos())
+            }
+            Rays => {
+                let a = (rv.psi() * PI).tan() / (x * x + y * y);
+                (a * x.cos(), a * y.sin())
+            }
+            Blade => {
+                let a = rv.psi() * r();
+                let (s, c) = a.sin_cos();
+                (x * (c + s), x * (c - s))
+            }
+            Twintrian => {
+                let a = rv.psi() * r();
+                let s = a.sin();
+                let t = (s * s).log10() + a.cos();
+                (x * t, x * (t - PI * s))
+            }
+            Square => (rv.psi() - 0.5, rv.psi() - 0.5),
+            // dependent
             Waves => {
                 let mat = affine_pre.matrix();
                 let b = mat.m12;
@@ -272,15 +270,48 @@ impl Variation {
                 let a = theta() + sgn * t / 2.0;
                 (r() * a.cos(), r() * a.sin())
             }
+            // parametric
+            Blob(w, h, l) => {
+                let a = r() * (l + (h - l) / 2.0 * (1.0 + (theta() * w as f32).sin()));
+                (a * y / r(), a * x / r())
+            }
+            Pdj(a, b, c, d) => ((a * y).sin() - (b * x).cos(), (c * x).sin() - (d * y).cos()),
+            Fan2(a, b) => {
+                let p1 = PI * a * a;
+                let t = theta() + b - p1 * (2. * theta() * b / p1).trunc();
+                let sgn = if t > p1 / 2. { -1. } else { 1. };
+                (
+                    r() * (theta() + sgn * p1 / 2.).sin(),
+                    r() * (theta() + sgn * p1 / 2.).cos(),
+                )
+            }
+            Rings2(val) => {
+                let p = val * val;
+                let t = r() - 2. * p * ((r() + p) / 2. / p).trunc() + r() * (1. - p);
+                (t * x / r(), t * y / r())
+            }
+            Perspective(angle, dist) => {
+                let a = dist / (dist - y * angle.sin());
+                (a * x, a * y * angle.cos())
+            }
+            Curl(c1, c2) => {
+                let t1 = 1. + c1 * x + c2 * (x * x - y * y);
+                let t2 = c1 * y + 2. * c2 * x * y;
+                let a = 1. / (t1 * t1 + t2 * t2);
+                (a * (x * t1 + y * t2), a * (y * t1 - x * t2))
+            }
             JuliaN(power, dist) => {
+                let power = power as f32;
                 let p3 = (power.abs() * rv.psi()).trunc();
                 let t = (phi() + TAU * p3) / power;
                 let a = r().powf(dist / power);
                 (a * t.cos(), a * t.sin())
             }
-            Blur => {
-                let a = rv.psi();
-                let t = TAU * rv.psi();
+            JuliaScope(power, dist) => {
+                let power = power as f32;
+                let p3 = (power.abs() * rv.psi()).trunc();
+                let t = (rv.lambda() * phi() + TAU * p3) / power;
+                let a = r().powf(dist / power);
                 (a * t.cos(), a * t.sin())
             }
             RadialBlur(angle) => {
@@ -291,13 +322,14 @@ impl Variation {
                 (r() * t2.cos() + t3 * x, r() * t2.sin() + t3 * y)
             }
             Pie(slices, rotation, thickness) => {
+                let slices = slices as f32;
                 let t1 = (rv.psi() * slices + 0.5).trunc();
                 let t2 = rotation + (TAU / slices) * (t1 + rv.psi() * thickness);
                 let a = rv.psi();
                 (a * t2.cos(), a * t2.sin())
             }
-            Ngon(power, sides, corners, circle) => {
-                let p2 = TAU / sides;
+            Ngon(sides, power, corners, circle) => {
+                let p2 = TAU / sides as f32;
                 let t3 = phi() - p2 * (phi() / p2).floor();
                 let t4 = if t3 > p2 / 2.0 { t3 } else { t3 - p2 };
                 let k = (corners * (1.0 / t4.cos() - 1.0) + circle)
@@ -308,28 +340,6 @@ impl Variation {
                 (2.0 * (x / rx).floor() + 1.0) * rx - x,
                 (2.0 * (y / ry).floor() + 1.0) * ry - y,
             ),
-            Arch => {
-                let a = rv.psi() * PI;
-                let s = a.sin();
-                (s, s * s / a.cos())
-            }
-            Rays => {
-                let a = (rv.psi() * PI).tan() / (x * x + y * y);
-                (a * x.cos(), a * y.sin())
-            }
-            Blade => {
-                let a = rv.psi() * r();
-                let (s, c) = a.sin_cos();
-                (x * (c + s), x * (c - s))
-            }
-            Secant => (x, r().cos().recip()),
-            Twintrian => {
-                let a = rv.psi() * r();
-                let s = a.sin();
-                let t = (s * s).log10() + a.cos();
-                (x * t, x * (t - PI * s))
-            }
-            // Square => (rv.psi() - 0.5, rv.psi() - 0.5),
         };
 
         Point2::new(xo, yo)

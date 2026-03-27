@@ -19,7 +19,7 @@ use flame::{
     self, Flame, RenderConfig, RunConfig, bounds::Bounds, buffer::Buffer,
     color::{Color, Palette}, function::FunctionEntry,
     random::{AffineDistribution, PaletteDistribution},
-    variation::{VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant},
+    variation::{VARIATION_DISCRIMINANTS, DynamicVariation, Variation, VariationDiscriminant},
 };
 
 const ITERS_PER_LOOP: usize = 100_000;
@@ -370,18 +370,24 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
             .iter()
             .map(|v| (format!("{v:?}"), *v)),
         move |_, flame: &Flame| {
-            flame
-                .functions
-                .get(index)
-                .unwrap_or(&flame.functions[0])
-                .function
-                .variation
-                .into()
+            VariationDiscriminant::from(
+                &flame
+                    .functions
+                    .get(index)
+                    .unwrap_or(&flame.functions[0])
+                    .function
+                    .variation,
+            )
         },
         |v| v,
     )
     .on_message_update(move |_, _, flame, discr: VariationDiscriminant| {
-        let var = Variation::build(discr, vec![0.0; discr.num_parameters()]).unwrap();
+        let (n_int, n_float) = discr.num_parameters();
+        let var = Variation::try_from(DynamicVariation {
+            discriminant: discr,
+            int_params: vec![1i8; n_int],
+            float_params: vec![0.0f32; n_float],
+        }).unwrap();
         if let Some(entry) = flame.functions.get_mut(index) {
             entry.function.variation = var;
         };

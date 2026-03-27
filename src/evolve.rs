@@ -10,7 +10,7 @@ use super::{
     color::{Color, Palette},
     function::{Function, FunctionEntry},
     random::FlameDistribution,
-    variation::Variation,
+    variation::{DynamicVariation, Variation},
 };
 
 /// Configuration for the genetic flame evolution algorithm
@@ -22,11 +22,12 @@ pub struct EvolveConfig<DF, DS, DN, DP> {
     pub palette_key_mutability: f32,
     pub palette_color_mutability: f32,
     pub affine_mutability: f32,
-    pub variation_param_mutability: f32,
+    pub variation_float_param_mutability: f32,
     pub weight_mutability: f32,
     pub color_mutability: f32,
     pub color_speed_mutability: f32,
     pub bounds_mutability: f32,
+    pub variation_int_param_mut_rate: f32,
 
     // probabilities for discrete mutation operators (independent per individual)
     pub function_insertion_rate: f32,
@@ -181,7 +182,8 @@ where
             perturb_affine(&entry.function.affine_post, cfg.affine_mutability, rng);
         mutate_variation(
             &mut entry.function.variation,
-            cfg.variation_param_mutability,
+            cfg.variation_float_param_mutability,
+            cfg.variation_int_param_mut_rate,
             rng,
         );
         entry.weight = (entry.weight + rng.sample(weight_dist)).max(1e-6);
@@ -194,7 +196,8 @@ where
     flame.last.affine_post = perturb_affine(&flame.last.affine_post, cfg.affine_mutability, rng);
     mutate_variation(
         &mut flame.last.variation,
-        cfg.variation_param_mutability,
+        cfg.variation_float_param_mutability,
+        cfg.variation_int_param_mut_rate,
         rng,
     );
 
@@ -271,16 +274,32 @@ fn perturb_affine(affine: &Affine2<f32>, stddev: f32, rng: &mut impl Rng) -> Aff
     ))
 }
 
-fn mutate_variation(var: &mut Variation, stddev: f32, rng: &mut impl Rng) {
-    let (discr, mut params) = (*var).deconstruct();
-    if params.is_empty() {
-        return;
-    }
-    let dist = Normal::new(0.0, stddev).unwrap();
-    for p in &mut params {
+fn mutate_variation(var: &mut Variation, float_stddev: f32, int_prob: f32, rng: &mut impl Rng) {
+    let mut dyn_var = DynamicVariation::from(*var);
+    let (int_ranges, float_ranges) = dyn_var.discriminant.parameter_ranges();
+
+    let dist = Normal::new(0.0, float_stddev).unwrap();
+
+    for (p, range) in dyn_var.float_params.iter_mut().zip(&float_ranges) {
         *p += rng.sample(dist);
+        if let Some(r) = range {
+            // clamp to specified range
+            *p = p.clamp(r.start, r.end);
+        }
     }
-    *var = Variation::build(discr, params).expect("deconstruct/build roundtrip must succeed");
+    for (p, range) in dyn_var.int_params.iter_mut().zip(&int_ranges) {
+        if rng.random::<f32>() < int_prob {
+            // pick change that won't move outside range
+            let dir = match range {
+                Some(r) if *p <= r.start => 1,
+                Some(r) if *p >= r.end - 1 => -1,
+                _ => if rng.random() { 1 } else { -1 }
+            };
+            *p += dir;
+        }
+    }
+    *var = Variation::try_from(dyn_var)
+        .expect("deconstruct/build roundtrip must succeed");
 }
 
 fn mutate_palette(palette: &mut Palette, key_stddev: f32, color_stddev: f32, rng: &mut impl Rng) {
