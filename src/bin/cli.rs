@@ -1,9 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use clap_num::si_number;
-use rand::{
-    Rng,
-    distr::Uniform,
-};
+use rand::Rng;
 use std::path::{Path, PathBuf};
 
 use flame::*;
@@ -24,41 +21,41 @@ enum Commands {
 }
 
 #[derive(Args)]
-struct RenderArgs {    
-        /// Path to flame descriptor(s) (file extension must be .json, .yaml, or .flam3).
-        input: Vec<PathBuf>,
-        /// Path to output directory.
-        ///
-        /// If multiple flames are selected, this is treated as a directory name, which will
-        /// be created if it does not already exist. If a single input was provided, it is
-        /// instead treated as a full file path which must have the extension .png or .jpeg.
-        /// In this case, the -f flag is ignored.
-        ///
-        /// If this option is not provided, output images have the same path stem as their
-        /// source descriptor.
-        #[arg(short, long)]
-        output: Option<PathBuf>,         
-        /// File type of output image. Allowed values are 'jpeg' and 'png'.
-        #[arg(short = 'f', long, default_value = "jpeg")]
-        filetype: String,
-        /// Number of iterations of the chaos game to run (accepts SI postfixes).
-        ///
-        /// Higher values reduce noise but take longer to run.
-        #[arg(short, long, default_value = "100M", value_parser = si_number::<usize>)]
-        iters: usize,
-        /// Number of parallel threads.
-        #[arg(short, long, default_value_t = 10)]
-        threads: usize,
-        /// Dimensions (in pixels) of the output image.
-        #[arg(short, long, number_of_values = 2, default_values_t = [1000, 1000])]
-        #[arg(value_names = ["WIDTH", "HEIGHT"])]
-        dims: Vec<usize>,
-        /// Image brightness.
-        #[arg(short, long, default_value_t = 20.0)]
-        brightness: f64,
-        /// Output a grayscale image, ignoring any specified color information.
-        #[arg(short = 'G', long)]
-        grayscale: bool,
+struct RenderArgs {
+    /// Path to flame descriptor(s) (file extension must be .json, .yaml, or .flam3).
+    input: Vec<PathBuf>,
+    /// Path to output directory.
+    ///
+    /// If multiple flames are selected, this is treated as a directory name, which will
+    /// be created if it does not already exist. If a single input was provided, it is
+    /// instead treated as a full file path which must have the extension .png or .jpeg.
+    /// In this case, the -f flag is ignored.
+    ///
+    /// If this option is not provided, output images have the same path stem as their
+    /// source descriptor.
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+    /// File type of output image. Allowed values are 'jpeg' and 'png'.
+    #[arg(short = 'f', long, default_value = "jpeg")]
+    filetype: String,
+    /// Number of iterations of the chaos game to run (accepts SI postfixes).
+    ///
+    /// Higher values reduce noise but take longer to run.
+    #[arg(short, long, default_value = "100M", value_parser = si_number::<usize>)]
+    iters: usize,
+    /// Number of parallel threads.
+    #[arg(short, long, default_value_t = 10)]
+    threads: usize,
+    /// Dimensions (in pixels) of the output image.
+    #[arg(short, long, number_of_values = 2, default_values_t = [1000, 1000])]
+    #[arg(value_names = ["WIDTH", "HEIGHT"])]
+    dims: Vec<usize>,
+    /// Image brightness.
+    #[arg(short, long, default_value_t = 20.0)]
+    brightness: f64,
+    /// Output a grayscale image, ignoring any specified color information.
+    #[arg(short = 'G', long)]
+    grayscale: bool,
 }
 
 #[derive(Args)]
@@ -117,20 +114,24 @@ fn render_and_save(
 fn run_render(args: RenderArgs) -> Result<(), Error> {
     let run_cfg = args.run_config();
     let render_cfg = args.render_config();
-    
+
     println!("Rendering flames...");
 
     let progress_bar = indicatif::ProgressBar::new(args.input.len() as u64);
 
     let before_run = std::time::Instant::now();
 
-    if args.input.len() == 1 && let Some(out_path) = args.output {
+    if args.input.len() == 1
+        && let Some(out_path) = args.output
+    {
         // output filename is specified
         let flame = Flame::from_file(&args.input[0])?;
         render_and_save(flame, out_path, run_cfg, render_cfg)?;
     } else {
         // create the output directory, if it's specified and doesn't exist
-        if let Some(ref out_dir) = args.output && !out_dir.exists() {
+        if let Some(ref out_dir) = args.output
+            && !out_dir.exists()
+        {
             std::fs::create_dir(out_dir).map_err(Error::DirectoryWriteError)?;
         }
 
@@ -156,7 +157,8 @@ fn run_render(args: RenderArgs) -> Result<(), Error> {
 
     progress_bar.finish();
 
-    println!("Completed in {}.{:02} seconds",
+    println!(
+        "Completed in {}.{:02} seconds",
         dur.as_secs(),
         dur.subsec_millis()
     );
@@ -182,7 +184,8 @@ fn run_random(args: RandomArgs) -> Result<(), Error> {
         // find the next available index in the directory
         let mut out_path: PathBuf;
         loop {
-            out_path = args.output
+            out_path = args
+                .output
                 .join(PathBuf::from(index.to_string()))
                 .with_extension(&args.filetype);
 
@@ -193,14 +196,12 @@ fn run_random(args: RandomArgs) -> Result<(), Error> {
             index += 1;
         }
 
-        let mut distr = random::DefaultFlameDistribution::default();
-        distr.func_distr.aff_distr.uniformity = args.uniformity;
-        distr.func_distr.aff_distr.skewness = args.skewness;
-        distr.func_num_distr = Uniform::try_from(
-            args.num_functions[0]..=args.num_functions[1],
-        ).unwrap();
+        let mut distr = random::FlameDistribution::default();
+        distr.uniformity = args.uniformity;
+        distr.skewness = args.skewness;
+        distr.func_num_vals = (args.num_functions[0]..=args.num_functions[1]).collect();
 
-        let flame = rng.sample(distr);
+        let flame: Flame = rng.sample(distr);
 
         flame.save(out_path)?;
 
@@ -217,7 +218,7 @@ fn run_random(args: RandomArgs) -> Result<(), Error> {
         dur.subsec_millis(),
         args.output.display()
     );
-   
+
     Ok(())
 }
 
@@ -225,7 +226,7 @@ fn main() {
     let cli = Cli::parse();
     let res = match cli.command {
         Commands::Render(args) => run_render(args),
-        Commands::Random(args) => run_random(args)
+        Commands::Random(args) => run_random(args),
     };
     if let Err(e) = res {
         eprintln!("Error: {}", e);

@@ -1,6 +1,5 @@
-use std::{collections::HashSet, ops::RangeInclusive};
+use std::collections::HashSet;
 
-use rand::distr::uniform::Uniform;
 use rusqlite::Connection;
 
 const DB_PATH: &str = "flames.db";
@@ -12,32 +11,32 @@ use xilem::{
 };
 
 use flame::{RunConfig, random::{
-    AffineDistribution, DefaultFlameDistribution, FlameDistribution,
-    FunctionDistribution, PaletteDistribution,
+    FlameDistribution,
 }};
 use flame::{
     Flame, RenderConfig,
     evolve::{EvolveConfig, evolve_init, evolve_step},
 };
 
-type DefaultEvolveConfig = EvolveConfig<
-    FunctionDistribution<AffineDistribution>,
-    Uniform<i8>,
-    Uniform<usize>,
-    PaletteDistribution<RangeInclusive<usize>>,
->;
-
 /// String-backed mirror of `EvolveConfig`, `RunConfig`, and `RenderConfig`
 /// for use as Xilem widget state.
 ///
 /// Each scalar field is stored as a `String` so it can be bound directly to
-/// a text-input widget. `flame_distr` is kept as `DefaultFlameDistribution`
-/// because it cannot be meaningfully represented as a single string.
+/// a text-input widget.
 /// Use `to_evolve_config`, `to_run_config`, and `to_render_config` to
 /// obtain validated config structs.
 #[derive(Clone)]
 pub struct ConfigFields {
-    pub flame_distr: DefaultFlameDistribution,
+    // FlameDistribution params
+    pub uniformity: String,
+    pub skewness: String,
+    pub symmetry_min: String,
+    pub symmetry_max: String,
+    pub symmetry_prob: String,
+    pub func_num_min: String,
+    pub func_num_max: String,
+    pub color_num_min: String,
+    pub color_num_max: String,
 
     // standard deviations for Gaussian noise applied each generation
     pub palette_key_mutability: String,
@@ -72,7 +71,7 @@ pub struct ConfigFields {
 }
 
 impl ConfigFields {
-    pub fn to_evolve_config(&self) -> Option<DefaultEvolveConfig> {
+    pub fn to_evolve_config(&self) -> Option<EvolveConfig> {
         macro_rules! parse_f32 {
             ($field:ident) => {
                 self.$field.parse::<f32>().ok()?
@@ -84,12 +83,28 @@ impl ConfigFields {
             return None;
         }
 
+        let uniformity = parse_f32!(uniformity);
+        let skewness = parse_f32!(skewness);
+        let sym_min = self.symmetry_min.parse::<i8>().ok()?;
+        let sym_max = self.symmetry_max.parse::<i8>().ok()?;
+        let fn_min = self.func_num_min.parse::<usize>().ok()?;
+        let fn_max = self.func_num_max.parse::<usize>().ok()?;
+        let col_min = self.color_num_min.parse::<usize>().ok()?;
+        let col_max = self.color_num_max.parse::<usize>().ok()?;
+        if sym_min > sym_max || fn_min > fn_max || col_min > col_max {
+            return None;
+        }
+
         Some(EvolveConfig {
             flame_distr: FlameDistribution {
-                func_distr: self.flame_distr.func_distr.clone(),
-                symmetry_distr: self.flame_distr.symmetry_distr,
-                func_num_distr: self.flame_distr.func_num_distr,
-                palette_distr: self.flame_distr.palette_distr.clone(),
+                uniformity,
+                skewness,
+                symmetry_vals: (sym_min..=sym_max)
+                    .filter(|s| !matches!(s, -1 | 0 | 1))
+                    .collect(),
+                symmetry_prob: self.symmetry_prob.parse::<f32>().ok()?,
+                func_num_vals: (fn_min..=fn_max).collect(),
+                color_num_vals: (col_min..=col_max).collect(),
             },
             palette_key_mutability: parse_f32!(palette_key_mutability),
             palette_color_mutability: parse_f32!(palette_color_mutability),
@@ -131,7 +146,15 @@ impl ConfigFields {
 impl Default for ConfigFields {
     fn default() -> Self {
         ConfigFields {
-            flame_distr: Default::default(),
+            uniformity: String::from("0.5"),
+            skewness: String::from("0.5"),
+            symmetry_min: String::from("-3"),
+            symmetry_max: String::from("5"),
+            symmetry_prob: String::from("0.5"),
+            func_num_min: String::from("4"),
+            func_num_max: String::from("7"),
+            color_num_min: String::from("3"),
+            color_num_max: String::from("7"),
             palette_key_mutability: String::from("0.04"),
             palette_color_mutability: String::from("8"),
             affine_mutability: String::from("0.05"),
@@ -222,7 +245,7 @@ fn next_gen_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
     });
     let t = task_raw(
         move |proxy, state: &mut AppData| {
-            let evolve_config: DefaultEvolveConfig =
+            let evolve_config: EvolveConfig =
                 state.config.to_evolve_config().unwrap();
             let run_cfg = state.config.to_run_config().unwrap();
             let render_cfg = state.config.to_render_config().unwrap();
@@ -315,6 +338,57 @@ fn save_button(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
 
 fn config_panel(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
     let c = &data.config;
+
+    let gen_fields = flex_col((
+        flex_row((
+            label("uniformity"),
+            text_input(c.uniformity.clone(), |d: &mut AppData, v| {
+                d.config.uniformity = v
+            }),
+        )),
+        flex_row((
+            label("skewness"),
+            text_input(c.skewness.clone(), |d: &mut AppData, v| {
+                d.config.skewness = v
+            }),
+        )),
+        flex_row((
+            label("symmetry range"),
+            text_input(c.symmetry_min.clone(), |d: &mut AppData, v| {
+                d.config.symmetry_min = v
+            }),
+            label("-"),
+            text_input(c.symmetry_max.clone(), |d: &mut AppData, v| {
+                d.config.symmetry_max = v
+            }),
+        )),
+        flex_row((
+            label("symmetry prob"),
+            text_input(c.symmetry_prob.clone(), |d: &mut AppData, v| {
+                d.config.symmetry_prob = v
+            }),
+        )),
+        flex_row((
+            label("num functions range"),
+            text_input(c.func_num_min.clone(), |d: &mut AppData, v| {
+                d.config.func_num_min = v
+            }),
+            label("-"),
+            text_input(c.func_num_max.clone(), |d: &mut AppData, v| {
+                d.config.func_num_max = v
+            }),
+        )),
+        flex_row((
+            label("num colors range"),
+            text_input(c.color_num_min.clone(), |d: &mut AppData, v| {
+                d.config.color_num_min = v
+            }),
+            label("-"),
+            text_input(c.color_num_max.clone(), |d: &mut AppData, v| {
+                d.config.color_num_max = v
+            }),
+        )),
+    ));
 
     let mutability_fields = flex_col((
         flex_row((
@@ -469,6 +543,8 @@ fn config_panel(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
     ));
 
     flex_col((
+        label("Generation").text_size(25.0),
+        gen_fields,
         label("Mutation rates").text_size(25.0),
         mutation_fields,
         label("Mutability").text_size(25.0),
@@ -476,7 +552,7 @@ fn config_panel(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
         label("Propagation").text_size(25.0),
         prop_fields,
         label("Rendering").text_size(25.0),
-        render_fields        
+        render_fields
     ))
 }
 

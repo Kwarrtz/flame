@@ -10,16 +10,22 @@ use kas::{
     },
 };
 use nalgebra::Affine2;
+use rand::{Rng, distr::Distribution};
 use std::{
-    fmt::Debug, ops::RangeInclusive, sync::mpsc::{Receiver, Sender, channel}, thread, time::Duration
+    fmt::Debug,
+    sync::mpsc::{Receiver, Sender, channel},
+    thread,
+    time::Duration,
 };
-use rand::distr::Distribution;
 
 use flame::{
-    self, Flame, RenderConfig, RunConfig, bounds::Bounds, buffer::Buffer,
-    color::{Color, Palette}, function::FunctionEntry,
-    random::{AffineDistribution, PaletteDistribution},
-    variation::{VARIATION_DISCRIMINANTS, DynamicVariation, Variation, VariationDiscriminant},
+    self, Flame, RenderConfig, RunConfig,
+    bounds::Bounds,
+    buffer::Buffer,
+    color::{Color, Palette},
+    function::FunctionEntry,
+    random::FlameDistribution,
+    variation::{DynamicVariation, VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant},
 };
 
 const ITERS_PER_LOOP: usize = 100_000;
@@ -37,13 +43,6 @@ const DEFAULT_RENDER_CONFIG: RenderConfig = RenderConfig {
     brightness: 20.,
     grayscale: false,
 };
-
-const AFFINE_DISTR: AffineDistribution = AffineDistribution {
-    uniformity: 0.7,
-    skewness: 0.4,
-};
-
-const PALETTE_DISTR: PaletteDistribution<RangeInclusive<usize>> = PaletteDistribution(3..=7);
 
 #[derive(Debug)]
 struct NewImage(Size, Vec<u8>);
@@ -105,10 +104,7 @@ fn generate_flame(
             let mut img_buf = vec![255; 4 * run_config.width * run_config.height];
             buffer.render_raw_rgba(&mut img_buf, config, iters);
 
-            let size = Size::new(
-                run_config.width as i32,
-                run_config.height as i32,
-            );
+            let size = Size::new(run_config.width as i32, run_config.height as i32);
             if proxy.push(NewImage(size, img_buf)).is_err() {
                 panic!("proxy closed");
             };
@@ -166,7 +162,9 @@ fn run_config_panel() -> impl Widget<Data = RunConfig> {
         "Width:",
         EditBox::parser(|cfg: &RunConfig| cfg.width, |value| value)
             .with_width_em(3., 3.)
-            .on_message_update(|_, _, cfg: &mut RunConfig, val: usize| { cfg.width = val; }),
+            .on_message_update(|_, _, cfg: &mut RunConfig, val: usize| {
+                cfg.width = val;
+            }),
         "Height:",
         EditBox::parser(|cfg: &RunConfig| cfg.height, |value| value)
             .with_width_em(3., 3.)
@@ -177,18 +175,12 @@ fn run_config_panel() -> impl Widget<Data = RunConfig> {
 fn render_config_panel() -> impl Widget<Data = RenderConfig> {
     row![
         "Brightness:",
-        EditBox::parser(
-            |cfg: &RenderConfig| cfg.brightness,
-            |value| value
-        )
-        .with_width_em(3., 3.)
-        .on_message_update(|_, _, cfg, val: f64| cfg.brightness = val),
+        EditBox::parser(|cfg: &RenderConfig| cfg.brightness, |value| value)
+            .with_width_em(3., 3.)
+            .on_message_update(|_, _, cfg, val: f64| cfg.brightness = val),
         "Grayscale:",
-        CheckBox::new_msg(
-            |_, cfg: &RenderConfig| cfg.grayscale,
-            |checked| checked
-        )
-        .on_message_update(|_, _, cfg, checked: bool| cfg.grayscale = checked),
+        CheckBox::new_msg(|_, cfg: &RenderConfig| cfg.grayscale, |checked| checked)
+            .on_message_update(|_, _, cfg, checked: bool| cfg.grayscale = checked),
     ]
 }
 
@@ -280,7 +272,9 @@ struct ListAdd;
 struct ListRemove(usize);
 
 trait UpdateAdaptWidget: Widget + Sized
-where <Self as Widget>::Data: Clone + Debug + 'static {
+where
+    <Self as Widget>::Data: Clone + Debug + 'static,
+{
     fn on_message_update<T: Debug + 'static>(
         self,
         f: impl Fn(&mut AdaptEventCx, &mut Self, &mut <Self as Widget>::Data, T) + 'static,
@@ -326,7 +320,7 @@ fn affine() -> impl Widget<Data = Affine2<f32>> {
     });
 
     let randomize = Button::label("R").with(|cx, _| {
-        cx.push(AFFINE_DISTR.sample(&mut rand::rng()));
+        cx.push(rand::rng().sample::<Flame, _>(FlameDistribution::default()));
     });
 
     row![Frame::new(fields), randomize.map_any()]
@@ -387,7 +381,8 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
             discriminant: discr,
             int_params: vec![1i8; n_int],
             float_params: vec![0.0f32; n_float],
-        }).unwrap();
+        })
+        .unwrap();
         if let Some(entry) = flame.functions.get_mut(index) {
             entry.function.variation = var;
         };
@@ -518,11 +513,17 @@ fn color_entry(index: usize) -> impl Widget<Data = Flame> {
 
 fn color_list() -> impl Widget<Data = Flame> {
     ScrollRegion::new_clip(column![
-        row![Button::label_msg("Add Color", ListAdd)
-            .map_any()
-            .on_message_update(move |_, _, flame: &mut Flame, ListAdd| {
-                flame.palette.add(Color::default());
-            }), Button::label_msg("R", ()).map_any().on_message_update(|_, _, flame: &mut Flame, ()| flame.palette = PALETTE_DISTR.sample(&mut rand::rng()))],
+        row![
+            Button::label_msg("Add Color", ListAdd)
+                .map_any()
+                .on_message_update(move |_, _, flame: &mut Flame, ListAdd| {
+                    flame.palette.add(Color::default());
+                }),
+            Button::label_msg("R", ())
+                .map_any()
+                .on_message_update(|_, _, flame: &mut Flame, ()| flame.palette =
+                    FlameDistribution::default().sample(&mut rand::rng()))
+        ],
         Column::new(vec![])
             .on_update(|cx, widget, flame: &Flame| {
                 if flame.palette.len() != widget.len() {
@@ -599,12 +600,9 @@ fn main() -> kas::runner::Result<()> {
     .unwrap();
 
     let proxy = app.create_proxy();
-    thread::spawn(move || {
-        generate_flame(flame_rx, run_config_rx, config_rx, proxy)
-    });
+    thread::spawn(move || generate_flame(flame_rx, run_config_rx, config_rx, proxy));
 
-    let run_config_box = run_config_panel()
-        .map(|data: &AppData| &data.run_config);
+    let run_config_box = run_config_panel().map(|data: &AppData| &data.run_config);
     let config_box = render_config_panel().map(|data: &AppData| &data.config);
 
     let misc_box = misc_panel().map(|data: &AppData| &data.flame);
@@ -620,7 +618,11 @@ fn main() -> kas::runner::Result<()> {
         .with_margin_style(MarginStyle::Large);
 
     let left_column = column![
-        run_config_box, config_box, misc_box, Separator::new(), palette_editor
+        run_config_box,
+        config_box,
+        misc_box,
+        Separator::new(),
+        palette_editor
     ];
 
     let root = column![

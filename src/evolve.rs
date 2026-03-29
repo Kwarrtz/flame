@@ -8,15 +8,15 @@ use super::{
     Flame,
     bounds::Bounds,
     color::{Color, Palette},
-    function::{Function, FunctionEntry},
+    function::FunctionEntry,
     random::FlameDistribution,
     variation::{DynamicVariation, Variation},
 };
 
 /// Configuration for the genetic flame evolution algorithm
 #[derive(Clone)]
-pub struct EvolveConfig<DF, DS, DN, DP> {
-    pub flame_distr: FlameDistribution<DF, DS, DN, DP>,
+pub struct EvolveConfig {
+    pub flame_distr: FlameDistribution,
 
     // standard deviations for Gaussian noise applied each generation
     pub palette_key_mutability: f32,
@@ -50,13 +50,7 @@ pub struct EvolveConfig<DF, DS, DN, DP> {
 }
 
 /// Generate an initial random population
-pub fn evolve_init<DF, DS, DN, DP>(cfg: &EvolveConfig<DF, DS, DN, DP>) -> Vec<Flame>
-where
-    DF: Distribution<FunctionEntry>,
-    DS: Distribution<i8>,
-    DN: Distribution<usize>,
-    DP: Distribution<Palette>,
-{
+pub fn evolve_init(cfg: &EvolveConfig) -> Vec<Flame> {
     let mut rng = rand::rng();
     (0..cfg.pop_size)
         .map(|_| rng.sample(&cfg.flame_distr))
@@ -64,16 +58,11 @@ where
 }
 
 /// Produce the next generation from the previous one and a set of fit individual indices
-pub fn evolve_step<DF, DS, DN, DP>(
+pub fn evolve_step(
     prev_gen: Vec<Flame>,
     fit: HashSet<usize>,
-    cfg: &EvolveConfig<DF, DS, DN, DP>,
+    cfg: &EvolveConfig,
 ) -> Vec<Flame>
-where
-    DF: Distribution<FunctionEntry> + Distribution<Function>,
-    DS: Distribution<i8>,
-    DN: Distribution<usize>,
-    DP: Distribution<Palette>,
 {
     let mut rng = rand::rng();
     let fit_w = cfg.fitness_weight / (1.0 + cfg.fitness_weight);
@@ -165,10 +154,7 @@ fn recombine(a: &Flame, b: &Flame, rng: &mut impl Rng) -> Flame {
 
 // --- Mutation ---
 
-fn mutate<DF, DS, DN, DP>(flame: &mut Flame, cfg: &EvolveConfig<DF, DS, DN, DP>, rng: &mut impl Rng)
-where
-    DF: Distribution<FunctionEntry> + Distribution<Function>,
-    DS: Distribution<i8>,
+fn mutate(flame: &mut Flame, cfg: &EvolveConfig, rng: &mut impl Rng)
 {
     let weight_dist = Normal::new(0.0, cfg.weight_mutability).unwrap();
     let color_dist = Normal::new(0.0, cfg.color_mutability).unwrap();
@@ -230,7 +216,7 @@ where
 
     // discrete: function insertion and deletion (independent)
     if rng.random::<f32>() < cfg.function_insertion_rate {
-        let entry: FunctionEntry = rng.sample(&cfg.flame_distr.func_distr);
+        let entry: FunctionEntry = rng.sample(&cfg.flame_distr);
         flame.functions.push(entry);
     }
     if rng.random::<f32>() < cfg.function_insertion_rate && flame.functions.len() > 1 {
@@ -249,12 +235,12 @@ where
 
     // discrete: symmetry replacement
     if rng.random::<f32>() < cfg.symmetry_replacement_rate {
-        flame.symmetry = rng.sample(&cfg.flame_distr.symmetry_distr);
+        flame.symmetry = cfg.flame_distr.random_symmetry(rng);
     }
 
     // discrete: final transform replacement
     if rng.random::<f32>() < cfg.last_replacement_rate {
-        flame.last = rng.sample(&cfg.flame_distr.func_distr);
+        flame.last = rng.sample(&cfg.flame_distr);
     }
 }
 
