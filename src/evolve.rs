@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use nalgebra::{Affine2, Matrix3, Transform};
-use rand::{distr::Distribution, distr::weighted::WeightedIndex, seq::SliceRandom, Rng};
+use rand::{Rng, RngExt, distr::{Distribution, weighted::WeightedIndex}, rngs::SmallRng, seq::SliceRandom};
 use rand_distr::Normal;
 
 use super::{
@@ -51,7 +51,7 @@ pub struct EvolveConfig {
 
 /// Generate an initial random population
 pub fn evolve_init(cfg: &EvolveConfig) -> Vec<Flame> {
-    let mut rng = rand::rng();
+    let mut rng: SmallRng = rand::make_rng();
     (0..cfg.pop_size)
         .map(|_| rng.sample(&cfg.flame_distr))
         .collect()
@@ -64,7 +64,7 @@ pub fn evolve_step(
     cfg: &EvolveConfig,
 ) -> Vec<Flame>
 {
-    let mut rng = rand::rng();
+    let mut rng: SmallRng = rand::make_rng();
     let fit_w = cfg.fitness_weight / (1.0 + cfg.fitness_weight);
     let unfit_w = 1.0 / (1.0 + cfg.fitness_weight);
 

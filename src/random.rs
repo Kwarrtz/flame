@@ -1,7 +1,7 @@
 use std::{f32::consts::TAU};
 
 use nalgebra::{Affine2, Matrix3, Rotation2, Similarity2, Vector2};
-use rand::{distr::{Distribution, StandardUniform}, seq::IndexedRandom, Rng};
+use rand::{Rng, RngExt, distr::{Distribution, StandardUniform}, seq::IndexedRandom};
 
 use crate::bounds::Bounds;
 

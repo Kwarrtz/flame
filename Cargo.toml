@@ -4,13 +4,14 @@ name = "flame"
 authors = ["Dathan Ault-McCoy"]
 edition = "2024"
 
-[profile.release]
-# debug = 1
+[profile.profiling]
+inherits = "release"
+debug = 1
 
 [dependencies]
 image = "0.25"
-rand = "0.9"
-rand_distr = "0.5"
+rand = "0.10"
+rand_distr = "0.6"
 nalgebra = "0.32"
 clap = { version = "4.1", features = ["derive"] }
 clap-num = "1.0"

@@ -1,6 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use clap_num::si_number;
-use rand::Rng;
+use rand::{RngExt, rngs::SmallRng};
 use std::path::{Path, PathBuf};
 
 use flame::*;
@@ -118,6 +118,7 @@ fn run_render(args: RenderArgs) -> Result<(), Error> {
     println!("Rendering flames...");
 
     let progress_bar = indicatif::ProgressBar::new(args.input.len() as u64);
+    progress_bar.tick();
 
     let before_run = std::time::Instant::now();
 
@@ -167,7 +168,7 @@ fn run_render(args: RenderArgs) -> Result<(), Error> {
 }
 
 fn run_random(args: RandomArgs) -> Result<(), Error> {
-    let mut rng = rand::rng();
+    let mut rng: SmallRng = rand::make_rng();
 
     if !args.output.exists() {
         std::fs::create_dir(&args.output).map_err(Error::DirectoryWriteError)?;
@@ -176,6 +177,7 @@ fn run_random(args: RandomArgs) -> Result<(), Error> {
     println!("Generating flames...");
 
     let progress_bar = indicatif::ProgressBar::new(args.num as u64);
+    progress_bar.tick();
 
     let before_run = std::time::Instant::now();
 

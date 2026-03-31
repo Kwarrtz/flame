@@ -13,7 +13,9 @@ pub struct Color {
 }
 
 fn lerp(a: u8, b: u8, t: f32) -> u8 {
-    (a as f32 * (1. - t) + b as f32 * t) as u8
+    let a = a as f32;
+    let b = b as f32;
+    (a + t * (b - a)) as u8
 }
 
 impl Color {
@@ -110,16 +112,26 @@ impl Palette {
             return None;
         };
 
-        let i = match self.keys.iter().rposition(|&k| k < c) {
-            None => 0,
-            Some(j) => j + 1,
-        };
-        // println!("{}", i);
+        let i = self.keys.partition_point(|&k| k < c);
         let kbefore = self.keys.get(i.wrapping_sub(1)).unwrap_or(&0.0);
         let kafter = self.keys.get(i).unwrap_or(&1.0);
         let t = (c - kbefore) / (kafter - kbefore);
 
         Some(Color::lerp(self.colors[i], self.colors[i + 1], t))
+    }
+
+    /// Pre-bake the palette into a 256-entry lookup table
+    ///
+    /// Since `Color` channels are `u8`, 256 entries cover the full achievable
+    /// color precision with zero loss. Use this in hot loops instead of
+    /// calling `sample` repeatedly.
+    pub fn generate_cache(&self) -> Box<[Color; 256]> {
+        let mut lut = Box::new([Color::WHITE; 256]);
+        for (i, slot) in lut.iter_mut().enumerate() {
+            *slot = self.sample(i as f32 / 255.0)
+                .expect("lut index out of bounds");
+        }
+        lut
     }
 
     /// Add a new `Color` to the end of the `Palette`

@@ -10,7 +10,7 @@ use kas::{
     },
 };
 use nalgebra::Affine2;
-use rand::{Rng, distr::Distribution};
+use rand::{RngExt, distr::Distribution, rngs::SmallRng};
 use std::{
     fmt::Debug,
     sync::mpsc::{Receiver, Sender, channel},
@@ -52,7 +52,7 @@ fn generate_flame(
     rx_render_config: Receiver<RenderConfig>,
     mut proxy: Proxy,
 ) {
-    let mut rng = rand::rng();
+    let mut rng: SmallRng = rand::make_rng();
 
     let mut flame = rx_flame.recv().unwrap();
     let mut run_config = rx_run_config.recv().unwrap();
