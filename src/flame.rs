@@ -80,47 +80,42 @@ impl Flame {
         let mut point = Point2::<f32>::new(rng.random(), rng.random());
         let mut c: f32 = rng.random();
 
-        // symmetry is implemented by adding the corresponding transformation as a function
-        let num_cases: u8 = if self.symmetry == 0 || self.symmetry == 1 {
-            1 // no added symmetry
-        } else if self.symmetry > 1 {
-            2 // rotational symmetry
-        } else {
-            3 // dihedral symmetry
-        };
+        // // symmetry is implemented by adding the corresponding transformation as a function
+        // let num_cases: u8 = if self.symmetry == 0 || self.symmetry == 1 {
+        //     1 // no added symmetry
+        // } else if self.symmetry > 1 {
+        //     2 // rotational symmetry
+        // } else {
+        //     3 // dihedral symmetry
+        // };
+
+        let rot_order = (self.symmetry.abs() as u8).max(1);
+        // include 0 branch for dihedral symmetry
+        let start = if self.symmetry < 0 { 0 } else { 1 };
 
         for i in 0..iters {
             // one step of the chaos game
-
-            // choose which kind of function to execute
-            match rng.random_range(0..num_cases) {
-                // actual flame function
-                0 => {
-                    // choose random function
+            
+            // three different kinds of transformations possible
+            match rng.random_range(start..rot_order+1) {
+                // function
+                1 => {
                     let entry = self.rand_entry(rng);
-
-                    // update point
                     point = entry.function.eval(rng, point);
-
-                    // update color
                     c *= 1.0 - entry.color_speed;
                     c += entry.color * entry.color_speed;
-                }
+                },
 
-                // rotation
-                1 => {
-                    let rot_degree = self.symmetry.abs();
-                    let times = rng.random_range(0..rot_degree);
-                    let rot = Rotation2::new(TAU * times as f32 / rot_degree as f32);
-                    point = rot * point;
-                }
-
-                // reflection (across y axis)
-                2 => {
+                // reflection
+                0 => {
                     point[0] = -point[0];
                 }
 
-                _ => unreachable!(),
+                // rotation
+                num => {
+                    let rot = Rotation2::new(TAU * num as f32 / rot_order as f32);
+                    point = rot * point;
+                },
             }
 
             // calculate point in screen coordinates
