@@ -20,9 +20,8 @@ use std::{
 
 use flame::{
     self, Flame, RenderConfig, RunConfig,
-    bounds::Bounds,
     buffer::Buffer,
-    color::{Color, Palette},
+    color::Color,
     function::FunctionEntry,
     random::FlameDistribution,
     variation::{DynamicVariation, VARIATION_DISCRIMINANTS, Variation, VariationDiscriminant},
@@ -432,6 +431,46 @@ fn function_entry(index: usize) -> impl Widget<Data = Flame> {
     }))
 }
 
+fn last_function_widget() -> impl Widget<Data = Flame> {
+    let affine_pre = affine()
+        .map(|flame: &Flame| &flame.last.affine_pre)
+        .on_message_update(|_, _, flame, affine: Affine2<f32>| {
+            flame.last.affine_pre = affine;
+        });
+
+    let affine_post = affine()
+        .map(|flame: &Flame| &flame.last.affine_post)
+        .on_message_update(|_, _, flame, affine: Affine2<f32>| {
+            flame.last.affine_post = affine;
+        });
+
+    let variation = ComboBox::new_msg(
+        VARIATION_DISCRIMINANTS
+            .iter()
+            .map(|v| (format!("{v:?}"), *v)),
+        |_, flame: &Flame| VariationDiscriminant::from(&flame.last.variation),
+        |v| v,
+    )
+    .on_message_update(|_, _, flame, discr: VariationDiscriminant| {
+        let (n_int, n_float) = discr.num_parameters();
+        let var = Variation::try_from(DynamicVariation {
+            discriminant: discr,
+            int_params: vec![1i8; n_int],
+            float_params: vec![0.0f32; n_float],
+        })
+        .unwrap();
+        flame.last.variation = var;
+    });
+
+    Frame::new(column![
+        Grid::new(cell_collection! {
+            (0..=1, 0) => variation,
+            (2, 0..=1) => affine_pre,
+            (3, 0..=1) => affine_post,
+        })
+    ])
+}
+
 fn function_list() -> impl Widget<Data = Flame> {
     ScrollRegion::new_clip(column![
         Button::label_msg("Add Function", ListAdd)
@@ -559,7 +598,7 @@ fn file_bar() -> impl Widget<Data = ()> {
             if let Some(()) = cx.try_pop() {
                 cx.send_spawn(widget.id(), async {
                     let file = rfd::AsyncFileDialog::new()
-                        .add_filter("Flame File", &["json", "yaml"])
+                        .add_filter("Flame File", &["json", "yaml", "flam3"])
                         .pick_file()
                         .await;
                     LoadFileFrom(file)
@@ -574,49 +613,47 @@ fn main() -> kas::runner::Result<()> {
     let (run_config_tx, run_config_rx) = channel();
     let (config_tx, config_rx) = channel();
     let (flame_tx, flame_rx) = channel();
-    let default_flame = Flame {
-        functions: vec![FunctionEntry::default(), FunctionEntry::default()],
-        last: flame::function::Function::default(),
-        symmetry: 1,
-        palette: Palette::new::<std::iter::Empty<f32>>(
-            vec![Color::rgb(255, 255, 255), Color::rgb(255, 255, 255)],
-            None,
-        )
-        .unwrap(),
-        bounds: Bounds::new(-1., 1., -1., 1.),
-    };
-    flame_tx.send(default_flame.clone()).unwrap();
+
+    // load flame from file specified in command line arguments, if any
+    let init_flame =
+        if let Some(file) = std::env::args().skip(1).next() {
+            Flame::from_file(file).unwrap()
+        } else {
+            Flame::default()
+        };
+
+    // prime channels with initial values for worker thread
+    flame_tx.send(init_flame.clone()).unwrap();
     run_config_tx.send(DEFAULT_RUN_CONFIG).unwrap();
     config_tx.send(DEFAULT_RENDER_CONFIG).unwrap();
 
     let app = Runner::new(AppData {
         run_config: DEFAULT_RUN_CONFIG,
         config: DEFAULT_RENDER_CONFIG,
-        flame: default_flame,
+        flame: init_flame,
         run_config_tx,
         config_tx,
         flame_tx,
-    })
-    .unwrap();
+    }).unwrap();
 
+    // spawn worker thread
     let proxy = app.create_proxy();
     thread::spawn(move || generate_flame(flame_rx, run_config_rx, config_rx, proxy));
 
+    // build gui
     let run_config_box = run_config_panel().map(|data: &AppData| &data.run_config);
     let config_box = render_config_panel().map(|data: &AppData| &data.config);
-
     let misc_box = misc_panel().map(|data: &AppData| &data.flame);
-
     let image = image_widget();
-
+    let last_fn = last_function_widget()
+        .map(|data: &AppData| &data.flame)
+        .with_margin_style(MarginStyle::Large);
     let function_editor = function_list()
         .map(|data: &AppData| &data.flame)
         .with_margin_style(MarginStyle::Large);
-
     let palette_editor = color_list()
         .map(|data: &AppData| &data.flame)
         .with_margin_style(MarginStyle::Large);
-
     let left_column = column![
         run_config_box,
         config_box,
@@ -624,9 +661,9 @@ fn main() -> kas::runner::Result<()> {
         Separator::new(),
         palette_editor
     ];
-
+    let right_column = column![last_fn, function_editor];
     let root = column![
-        Splitter::right(collection![left_column, image, function_editor]),
+        Splitter::right(collection![left_column, image, right_column]),
         file_bar().map_any()
     ];
 
