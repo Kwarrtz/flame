@@ -41,6 +41,7 @@ struct FlameCache {
     rotations: Vec<Rotation2<f32>>,
     entry_distr: WeightedIndex<f32>,
     palette: Box<[Color; 256]>,
+    rng: SmallRng,
 }
 
 impl Flame {
@@ -69,13 +70,12 @@ impl Flame {
     /// Run the chaos game in a single thread.
     fn run_single_thread(&self, width: usize, height: usize, iters: usize) -> Buffer<u32> {
         let mut buffer: Buffer<u32> = Buffer::new(width, height);
-        let mut rng: SmallRng = rand::make_rng();
-        self.run_partial(&mut buffer, iters, &mut rng);
+        self.run_partial(&mut buffer, iters);
         buffer
     }
 
     /// Run the chaos game on a pre-allocated buffer. Useful for incremental rendering, e.g. as part of a GUI.
-    pub fn run_partial(&self, buffer: &mut Buffer<u32>, iters: usize, rng: &mut impl Rng) {
+    pub fn run_partial(&self, buffer: &mut Buffer<u32>, iters: usize) {
         // a `Flame` with no functions should return a blank buffer / black screen
         if self.functions.is_empty() {
             return;
@@ -83,25 +83,26 @@ impl Flame {
 
         let trans = self.bounds.screen_transform(buffer.width, buffer.height);
 
+        let mut cache = self.generate_cache();
+
         // random initial point and color value
-        let mut point = Point2::<f32>::new(rng.random(), rng.random());
-        let mut c: f32 = rng.random();
+        let mut point = Point2::<f32>::new(cache.rng.random(), cache.rng.random());
+        let mut c: f32 = cache.rng.random();
 
         let rot_order = self.symmetry.abs().max(1);
         // include 0 branch for dihedral symmetry
         let start = if self.symmetry < 0 { -1 } else { 0 };
 
-        let cache = self.generate_cache();
-
         for i in 0..iters {
             // one step of the chaos game
             
             // three different kinds of transformations possible
-            match rng.random_range(start..rot_order) {
+            match cache.rng.random_range(start..rot_order) {
+            // match cache.frng.i8(start..rot_order) {
                 // function
                 0 => {
-                    let entry = self.rand_entry(rng, &cache);
-                    point = entry.function.eval(rng, point);
+                    let entry = self.rand_entry(&mut cache);
+                    point = entry.function.eval(&mut cache.rng, point);
                     c *= 1.0 - entry.color_speed;
                     c += entry.color * entry.color_speed;
                 }
@@ -118,7 +119,7 @@ impl Flame {
             }
 
             // calculate point in screen coordinates
-            let screen_point = trans * self.last.eval(rng, point);
+            let screen_point = trans * self.last.eval(&mut cache.rng, point);
 
             if i > 20 && let Some(bucket) = buffer.at_mut(screen_point) {
                 // skip plotting the point if its the first 20 iterations or the point
@@ -137,8 +138,8 @@ impl Flame {
     }
 
     /// Get a random `FunctionEntry`
-    fn rand_entry(&self, rng: &mut impl Rng, cache: &FlameCache) -> &FunctionEntry {
-        &self.functions[rng.sample(&cache.entry_distr)]
+    fn rand_entry(&self, cache: &mut FlameCache) -> &FunctionEntry {
+        &self.functions[cache.rng.sample(&cache.entry_distr)]
     }
 
     fn generate_cache(&self) -> FlameCache {
@@ -153,6 +154,7 @@ impl Flame {
             rotations,
             entry_distr,
             palette: self.palette.generate_cache(),
+            rng: rand::make_rng(),
         }
     }
 

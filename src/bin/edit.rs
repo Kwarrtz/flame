@@ -10,7 +10,7 @@ use kas::{
     },
 };
 use nalgebra::Affine2;
-use rand::{RngExt, distr::Distribution, rngs::SmallRng};
+use rand::{RngExt, distr::Distribution};
 use std::{
     fmt::Debug,
     sync::mpsc::{Receiver, Sender, channel},
@@ -52,8 +52,6 @@ fn generate_flame(
     rx_render_config: Receiver<RenderConfig>,
     mut proxy: Proxy,
 ) {
-    let mut rng: SmallRng = rand::make_rng();
-
     let mut flame = rx_flame.recv().unwrap();
     let mut run_config = rx_run_config.recv().unwrap();
     let mut config = rx_render_config.recv().unwrap();
@@ -67,7 +65,7 @@ fn generate_flame(
 
         if iters < MAX_ITERS {
             // advance flame simulation
-            flame.run_partial(&mut buffer, ITERS_PER_LOOP, &mut rng);
+            flame.run_partial(&mut buffer, ITERS_PER_LOOP);
             iters += ITERS_PER_LOOP;
             rerender = true;
         } else {

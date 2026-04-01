@@ -16,7 +16,6 @@ impl<T: Copy> Buffer<T> {
         if x >= self.width || y >= self.height {
             return None;
         }
-
         Some(self.buckets[x + y * self.width])
     }
 
@@ -24,7 +23,6 @@ impl<T: Copy> Buffer<T> {
         if x >= self.width || y >= self.height {
             return None;
         }
-
         Some(&mut self.buckets[x + y * self.width])
     }
 
