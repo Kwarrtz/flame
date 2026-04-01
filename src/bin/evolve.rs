@@ -18,7 +18,7 @@ use xilem::{
 };
 
 use flame::{
-    Flame, RenderConfig,
+    BlurConfig, Flame, RenderConfig,
     evolve::{EvolveConfig, evolve_init, evolve_step},
 };
 use flame::{RunConfig, random::FlameDistribution};
@@ -73,6 +73,8 @@ pub struct ConfigFields {
 
     // RenderConfig fields (grayscale always false)
     pub brightness: String,
+    pub blur_strength: String,
+    pub blur_sigma_max: String,
 }
 
 impl ConfigFields {
@@ -141,9 +143,18 @@ impl ConfigFields {
     }
 
     pub fn to_render_config(&self) -> Option<RenderConfig> {
+        let blur_k: f64 = self.blur_strength.parse().ok()?;
+        let blur_sigma_max: f64 = self.blur_sigma_max.parse().ok()?;
+        let blur = (blur_sigma_max > 0.0).then(|| BlurConfig {
+            strength: blur_k,
+            sigma_min: 0.0,
+            sigma_max: blur_sigma_max,
+            patch_sigma: 2.0,
+        });
         Some(RenderConfig {
             brightness: self.brightness.parse().ok()?,
             grayscale: false,
+            blur,
         })
     }
 }
@@ -155,7 +166,7 @@ impl Default for ConfigFields {
             skewness: String::from("0.5"),
             symmetry_min: String::from("-3"),
             symmetry_max: String::from("5"),
-            symmetry_prob: String::from("0.5"),
+            symmetry_prob: String::from("0.35"),
             func_num_min: String::from("4"),
             func_num_max: String::from("7"),
             color_num_min: String::from("3"),
@@ -165,7 +176,7 @@ impl Default for ConfigFields {
             affine_mutability: String::from("0.05"),
             variation_float_param_mutability: String::from("0.1"),
             variation_int_param_mut_rate: String::from("0.15"),
-            weight_mutability: String::from("0.1"),
+            weight_mutability: String::from("0.05"),
             color_mutability: String::from("0.1"),
             color_speed_mutability: String::from("0.05"),
             bounds_mutability: String::from("0.1"),
@@ -179,9 +190,11 @@ impl Default for ConfigFields {
             fitness_weight: String::from("3"),
             width: String::from("250"),
             height: String::from("250"),
-            iters: String::from("30000000"),
+            iters: String::from("20000000"),
             threads: String::from("10"),
             brightness: String::from("22"),
+            blur_strength: String::from("0.015"),
+            blur_sigma_max: String::from("0.03"),
         }
     }
 }
@@ -268,6 +281,7 @@ fn render_images(
                 &mut img_buf,
                 render_cfg,
                 run_cfg.iters,
+                flame.bounds,
             );
             ImageData {
                 data: Blob::new(std::sync::Arc::new(img_buf.into_boxed_slice())),
@@ -566,6 +580,18 @@ fn config_panel(data: &mut AppData) -> impl WidgetView<AppData> + use<> {
             label("brightness"),
             text_input(c.brightness.clone(), |d: &mut AppData, v| {
                 d.config.brightness = v
+            }),
+        )),
+        flex_row((
+            label("blur strength"),
+            text_input(c.blur_strength.clone(), |d: &mut AppData, v| {
+                d.config.blur_strength = v
+            }),
+        )),
+        flex_row((
+            label("blur sigma max"),
+            text_input(c.blur_sigma_max.clone(), |d: &mut AppData, v| {
+                d.config.blur_sigma_max = v
             }),
         )),
     ));

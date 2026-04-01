@@ -12,4 +12,4 @@ pub mod variation;
 mod flame;
 pub use error::Error;
 pub use flame::*;
-pub use render::RenderConfig;
+pub use render::{BlurConfig, RenderConfig};

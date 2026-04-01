@@ -41,6 +41,7 @@ const DEFAULT_RUN_CONFIG: RunConfig = RunConfig {
 const DEFAULT_RENDER_CONFIG: RenderConfig = RenderConfig {
     brightness: 20.,
     grayscale: false,
+    blur: None,
 };
 
 #[derive(Debug)]
@@ -99,7 +100,7 @@ fn generate_flame(
 
         if rerender {
             let mut img_buf = vec![255; 4 * run_config.width * run_config.height];
-            buffer.render_raw_rgba(&mut img_buf, config, iters);
+            buffer.render_raw_rgba(&mut img_buf, config, iters, flame.bounds);
 
             let size = Size::new(run_config.width as i32, run_config.height as i32);
             if proxy.push(NewImage(size, img_buf)).is_err() {

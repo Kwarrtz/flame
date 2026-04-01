@@ -56,6 +56,21 @@ struct RenderArgs {
     /// Output a grayscale image, ignoring any specified color information.
     #[arg(short = 'G', long)]
     grayscale: bool,
+    /// Enable adaptive Gaussian blur (density estimation denoising).
+    #[arg(long, short = 'l')]
+    blur: bool,
+    /// Blur radius coefficient in world units per log density.
+    #[arg(long, short = 's', default_value_t = 0.03)]
+    blur_strength: f64,
+    /// Minimum blur sigma in world units.
+    #[arg(long, default_value_t = 0.0)]
+    blur_sigma_min: f64,
+    /// Maximum blur sigma in world units.
+    #[arg(long, default_value_t = 0.05)]
+    blur_sigma_max: f64,
+    /// Gaussian sigma (pixels) for local density patch averaging.
+    #[arg(long, default_value_t = 2.0)]
+    blur_patch_sigma: f64,
 }
 
 #[derive(Args)]
@@ -93,6 +108,12 @@ impl RenderArgs {
         RenderConfig {
             brightness: self.brightness,
             grayscale: self.grayscale,
+            blur: self.blur.then(|| BlurConfig {
+                strength: self.blur_strength,
+                sigma_min: self.blur_sigma_min,
+                sigma_max: self.blur_sigma_max,
+                patch_sigma: self.blur_patch_sigma,
+            }),
         }
     }
 }
@@ -103,8 +124,9 @@ fn render_and_save(
     run_cfg: RunConfig,
     render_cfg: RenderConfig,
 ) -> Result<(), Error> {
+    let bounds = flame.bounds;
     let buffer = flame.run(run_cfg);
-    let img_buffer = buffer.render(render_cfg, run_cfg.iters);
+    let img_buffer = buffer.render(render_cfg, run_cfg.iters, bounds);
 
     img_buffer.to_dynamic8(render_cfg.grayscale).save(out)?;
 

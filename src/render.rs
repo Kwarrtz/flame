@@ -1,44 +1,97 @@
 use image::{DynamicImage, GrayImage, ImageBuffer, RgbImage};
 use num_traits::{Bounded, Float, Num, NumAssign, NumCast, ToPrimitive, clamp, one, zero};
+use rayon::prelude::*;
 
+use super::bounds::Bounds;
 use super::bucket::*;
 use super::buffer::*;
+
+/// Configuration for adaptive Gaussian blur (density estimation denoising)
+#[derive(Clone, Copy, Debug)]
+pub struct BlurConfig {
+    /// inverse-density scale in world units; default 0.001
+    pub strength: f64,
+    /// minimum blur sigma in world units; default 0.1
+    pub sigma_min: f64,
+    /// maximum blur sigma in world units; default 0.5
+    pub sigma_max: f64,
+    /// sigma of the Gaussian used to average local density (pixels); default 2.0
+    pub patch_sigma: f64,
+}
+
+impl Default for BlurConfig {
+    fn default() -> Self {
+        BlurConfig {
+            strength: 0.001,
+            sigma_min: 0.1,
+            sigma_max: 0.5,
+            patch_sigma: 2.0,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct RenderConfig {
     pub brightness: f64,
     pub grayscale: bool,
+    pub blur: Option<BlurConfig>,
 }
 
 impl<T: ToPrimitive + Clone> Buffer<T> {
-    pub fn render<S: Bounded + Num + NumCast>(&self, cfg: RenderConfig, iters: usize) -> Buffer<S> {
+    pub fn render<S: Bounded + Num + NumCast>(
+        &self,
+        cfg: RenderConfig,
+        iters: usize,
+        bounds: Bounds,
+    ) -> Buffer<S> {
         let mut buffer = self.clone().convert::<f64>();
-        buffer.log_density(cfg.brightness, iters as f64);
+        let ln_alphas = buffer.log_density(cfg.brightness, iters as f64);
+        if let Some(blur_cfg) = &cfg.blur {
+            buffer.blur(&ln_alphas, blur_cfg, bounds);
+        }
         buffer.normalize();
         buffer.scale_convert()
     }
 
-    pub fn render_raw_rgba(&self, raw: &mut [u8], cfg: RenderConfig, iters: usize) {
-        let img_buffer = self.render(cfg, iters);
+    pub fn render_raw_rgba(
+        &self,
+        raw: &mut [u8],
+        cfg: RenderConfig,
+        iters: usize,
+        bounds: Bounds,
+    ) {
+        let img_buffer = self.render(cfg, iters, bounds);
         img_buffer.write_to_raw_rgba8(raw, cfg.grayscale);
     }
 
-    pub fn render_image(&self, cfg: RenderConfig, iters: usize) -> DynamicImage {
-        let img_buffer = self.render(cfg, iters);
+    pub fn render_image(
+        &self,
+        cfg: RenderConfig,
+        iters: usize,
+        bounds: Bounds,
+    ) -> DynamicImage {
+        let img_buffer = self.render(cfg, iters, bounds);
         img_buffer.to_dynamic8(cfg.grayscale)
     }
 }
 
 impl<T: Float + NumAssign + Copy> Buffer<T> {
-    pub fn log_density(&mut self, brightness: T, iters: T) {
-        for bucket in self.buckets.iter_mut() {
-            if bucket.alpha.is_normal() {
-                let new_alpha = bucket.alpha.ln() - iters.ln() + brightness;
-                let new_alpha = T::max(T::zero(), new_alpha);
-                let s = new_alpha / bucket.alpha;
-                *bucket *= s;
-            }
-        }
+    /// Apply log-density scaling. Returns raw `ln(alpha)` per pixel before
+    /// brightness/iters compensation — used to drive adaptive blur widths.
+    pub fn log_density(&mut self, brightness: T, iters: T) -> Vec<T> {
+        self.buckets
+            .iter_mut()
+            .map(|bucket| {
+                let raw_ln = bucket.alpha.ln();
+                if bucket.alpha.is_normal() {
+                    let new_alpha = raw_ln - iters.ln() + brightness;
+                    let new_alpha = T::max(T::zero(), new_alpha);
+                    let s = new_alpha / bucket.alpha;
+                    *bucket *= s;
+                }
+                raw_ln
+            })
+            .collect()
     }
 
     pub fn gamma(&mut self, gamma: T, vibrancy: T) {
@@ -80,6 +133,93 @@ impl<T: Float + NumAssign + Copy> Buffer<T> {
             height: self.height,
             buckets: self.buckets.iter().cloned().map(|b| b.map(scale)).collect(),
         }
+    }
+}
+
+impl Buffer<f64> {
+    /// Apply spatially-adaptive Gaussian blur to all channels.
+    ///
+    /// Kernel sigma for each pixel is inversely proportional to the average
+    /// log hit count in a local patch, computed in world coordinates and
+    /// converted to pixels via `bounds`. Sparse regions get wide blur; dense
+    /// regions get narrow (or no) blur.
+    ///
+    /// Uses a two-phase separable approach: horizontal pass then vertical pass,
+    /// each parallelized by row via rayon.
+    pub fn blur(&mut self, ln_alphas: &[f64], cfg: &BlurConfig, bounds: Bounds) {
+        let width = self.width;
+        let height = self.height;
+        let px_per_world = width as f64 / bounds.width() as f64;
+        let ps = cfg.patch_sigma;
+        let r = (3.0 * ps).ceil() as i64;
+        let inv2ps2 = 1.0 / (2.0 * ps * ps);
+
+        // phase 1: Gaussian-weighted average of ln_alpha in local patch,
+        // then map to per-pixel blur sigma in pixels
+        let mut sigmas = vec![0.0f64; width * height];
+        sigmas
+            .par_chunks_mut(width)
+            .enumerate()
+            .for_each(|(y, row)| {
+                for (x, sigma_out) in row.iter_mut().enumerate() {
+                    let mut wsum = 0.0f64;
+                    let mut wasum = 0.0f64;
+                    for dy in -r..=r {
+                        for dx in -r..=r {
+                            let sx = (x as i64 + dx).clamp(0, width as i64 - 1) as usize;
+                            let sy = (y as i64 + dy).clamp(0, height as i64 - 1) as usize;
+                            let la = ln_alphas[sx + sy * width];
+                            if la.is_finite() && la > 0.0 {
+                                let w = (-((dx * dx + dy * dy) as f64) * inv2ps2).exp();
+                                wasum += w * la;
+                                wsum += w;
+                            }
+                        }
+                    }
+                    let sigma_world = if wsum == 0.0 {
+                        cfg.sigma_max
+                    } else {
+                        (cfg.strength / (wasum / wsum)).clamp(cfg.sigma_min, cfg.sigma_max)
+                    };
+                    *sigma_out = sigma_world * px_per_world;
+                }
+            });
+
+        // phase 2: 2D Gaussian blur — read from original src, write to temp
+        let mut temp = Buffer::<f64>::new(width, height);
+        {
+            let src = &self.buckets;
+            temp.buckets
+                .par_chunks_mut(width)
+                .enumerate()
+                .for_each(|(y, out_row)| {
+                    for (x, out) in out_row.iter_mut().enumerate() {
+                        let sigma = sigmas[x + y * width];
+                        if sigma < 0.5 {
+                            *out = src[x + y * width];
+                            continue;
+                        }
+                        let hw = (3.0 * sigma).ceil() as i64;
+                        let inv2s2 = 1.0 / (2.0 * sigma * sigma);
+                        let mut acc = Bucket::<f64>::new();
+                        let mut wsum = 0.0f64;
+                        for dy in -hw..=hw {
+                            let sy = (y as i64 + dy).clamp(0, height as i64 - 1) as usize;
+                            for dx in -hw..=hw {
+                                let sx = (x as i64 + dx).clamp(0, width as i64 - 1) as usize;
+                                let w = (-((dx * dx + dy * dy) as f64) * inv2s2).exp();
+                                let mut b = src[sx + sy * width];
+                                b *= w;
+                                acc += b;
+                                wsum += w;
+                            }
+                        }
+                        acc *= 1.0 / wsum;
+                        *out = acc;
+                    }
+                });
+        }
+        self.buckets = temp.buckets;
     }
 }
 
